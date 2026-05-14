@@ -1,20 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  Calculator,
-  CalendarDays,
-  Database,
-  FileClock,
-  GitCompareArrows,
-  Layers,
-  Plus,
-  RotateCcw,
-  Save,
-  Settings,
-  Trash2,
-} from "lucide-react";
+import { Calculator, CalendarDays, Database, FileClock, GitCompareArrows, Layers, Plus, RotateCcw, Save, Settings, Trash2 } from "lucide-react";
 
 import { AdvancedCalculator } from "./AdvancedCalculator";
 import { api } from "./api";
+import { Alert } from "./components/ui/alert";
+import { Badge } from "./components/ui/badge";
+import { Button } from "./components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./components/ui/card";
+import { Checkbox, CheckboxField } from "./components/ui/checkbox";
+import { Input, Textarea } from "./components/ui/input";
+import { Field } from "./components/ui/label";
+import { NativeSelect } from "./components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
+import { cn } from "./lib/utils";
 
 const emptyForm = {
   name: "Transcript example",
@@ -34,33 +33,11 @@ const locations = [
   ["city_london", "City of London"],
 ];
 
-const countries = [
-  ["England", "England"],
-  ["Scotland", "Scotland"],
-  ["Wales", "Wales"],
-];
-
-const statuses = [
-  ["active", "Active"],
-  ["draft", "Draft"],
-  ["archived", "Archived"],
-];
-
-const strategies = [
-  ["england_2023", "England 2023"],
-  ["england_2026", "England 2026"],
-];
-
-const locationGroups = [
-  ["england", "England outside London"],
-  ["london", "London"],
-];
-
-const categories = [
-  ["small", "Small"],
-  ["medium", "Medium"],
-  ["large", "Large"],
-];
+const countries = [["England", "England"], ["Scotland", "Scotland"], ["Wales", "Wales"]];
+const statuses = [["active", "Active"], ["draft", "Draft"], ["archived", "Archived"]];
+const strategies = [["england_2023", "England 2023"], ["england_2026", "England 2026"]];
+const locationGroups = [["england", "England outside London"], ["london", "London"]];
+const categories = [["small", "Small"], ["medium", "Medium"], ["large", "Large"]];
 
 const supplementScopes = [
   ["any", "Any location"],
@@ -96,12 +73,11 @@ const adminPanels = [
 ];
 
 function money(value) {
-  const number = Number(value || 0);
   return new Intl.NumberFormat("en-GB", {
     style: "currency",
     currency: "GBP",
     minimumFractionDigits: 2,
-  }).format(number);
+  }).format(Number(value || 0));
 }
 
 function decimal(value) {
@@ -241,6 +217,7 @@ function App() {
 
   const activeRateList = config?.rate_lists?.[selectedRateList] || null;
   const activeYear = activeRateList?.years?.[selectedYear] || null;
+  const rateListOptions = useMemo(() => config?.rate_lists || [], [config]);
 
   async function calculate() {
     setError("");
@@ -407,325 +384,353 @@ function App() {
     }
   }
 
-  const rateListOptions = useMemo(() => config?.rate_lists || [], [config]);
-
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <Calculator size={24} />
+    <div className="min-h-screen bg-background text-foreground lg:grid lg:grid-cols-[240px_1fr]">
+      <aside className="border-b bg-primary text-primary-foreground lg:min-h-screen lg:border-b-0 lg:border-r lg:border-primary/20">
+        <div className="flex items-center gap-2 px-4 py-4 text-base font-semibold lg:px-5">
+          <Calculator className="h-5 w-5" />
           <span>CalcuRate</span>
         </div>
-        <button className={tab === "calculator" ? "nav active" : "nav"} onClick={() => setTab("calculator")}>
-          <Calculator size={18} />
-          Calculator
-        </button>
-        <button className={tab === "advanced" ? "nav active" : "nav"} onClick={() => setTab("advanced")}>
-          <GitCompareArrows size={18} />
-          Advanced
-        </button>
-        <button className={tab === "scenarios" ? "nav active" : "nav"} onClick={() => setTab("scenarios")}>
-          <FileClock size={18} />
-          Scenarios
-        </button>
-        <button className={tab === "admin" ? "nav active" : "nav"} onClick={() => setTab("admin")}>
-          <Settings size={18} />
-          Admin
-        </button>
+        <nav className="flex gap-1 overflow-x-auto px-3 pb-3 lg:grid lg:px-3">
+          <NavButton active={tab === "calculator"} icon={Calculator} onClick={() => setTab("calculator")}>
+            Calculator
+          </NavButton>
+          <NavButton active={tab === "advanced"} icon={GitCompareArrows} onClick={() => setTab("advanced")}>
+            Advanced
+          </NavButton>
+          <NavButton active={tab === "scenarios"} icon={FileClock} onClick={() => setTab("scenarios")}>
+            Scenarios
+          </NavButton>
+          <NavButton active={tab === "admin"} icon={Settings} onClick={() => setTab("admin")}>
+            Admin
+          </NavButton>
+        </nav>
       </aside>
 
-      <main className="main">
-        <header className="topbar">
+      <main className="min-w-0">
+        <header className="flex items-start justify-between gap-4 border-b bg-card px-5 py-4 md:px-8">
           <div>
-            <h1>{tab === "calculator" ? "Calculator" : tab === "advanced" ? "Advanced" : tab === "scenarios" ? "Scenarios" : "Admin"}</h1>
-            <p>{tab === "advanced" ? "Original and revised liability comparison" : result ? `${result.rate_list_name} - ${money(result.total)}` : "England business rates"}</p>
+            <h1 className="text-xl font-semibold tracking-tight">
+              {tab === "calculator" ? "Calculator" : tab === "advanced" ? "Advanced" : tab === "scenarios" ? "Scenarios" : "Admin"}
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {tab === "advanced" ? "Original and revised liability comparison" : result ? `${result.rate_list_name} - ${money(result.total)}` : "England business rates"}
+            </p>
           </div>
-          <div className="status-pill">
-            <Database size={16} />
+          <Badge variant="success" className="gap-1.5">
+            <Database className="h-3.5 w-3.5" />
             SQLite
-          </div>
+          </Badge>
         </header>
 
-        {error && <div className="alert error">{error}</div>}
-        {notice && <div className="alert notice">{notice}</div>}
+        <div className="space-y-3 px-5 pt-4 md:px-8">
+          {error && <Alert variant="destructive">{error}</Alert>}
+          {notice && <Alert variant="success">{notice}</Alert>}
+        </div>
 
         {tab === "calculator" && (
-          <div className="workspace two-column">
-            <section className="tool-panel">
-              <div className="panel-heading">
-                <h2>Inputs</h2>
-                <button className="icon-button" onClick={() => setForm(emptyForm)} title="Reset inputs">
-                  <RotateCcw size={18} />
-                </button>
-              </div>
-              <div className="form-grid">
-                <label>
-                  Scenario name
-                  <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
-                </label>
-                <label>
-                  Rating list
-                  <select
-                    value={form.rate_list_code}
-                    onChange={(event) => setForm({ ...form, rate_list_code: event.target.value })}
-                  >
-                    {rateListOptions.map((item) => (
-                      <option key={item.code} value={item.code}>
-                        {item.name} ({item.status})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Location
-                  <select value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })}>
-                    {locations.map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  RV at previous list end
-                  <input
-                    type="number"
-                    min="0"
-                    value={form.previous_rv}
-                    onChange={(event) => setForm({ ...form, previous_rv: event.target.value })}
-                  />
-                </label>
-                <label>
-                  RV at revaluation
-                  <input
-                    type="number"
-                    min="0"
-                    value={form.current_rv}
-                    onChange={(event) => setForm({ ...form, current_rv: event.target.value })}
-                  />
-                </label>
-                <label>
-                  Liability start
-                  <input
-                    type="date"
-                    value={form.liability_start_date || ""}
-                    onChange={(event) => setForm({ ...form, liability_start_date: event.target.value })}
-                  />
-                </label>
-                <label>
-                  Liability end
-                  <input
-                    type="date"
-                    value={form.liability_end_date || ""}
-                    onChange={(event) => setForm({ ...form, liability_end_date: event.target.value })}
-                  />
-                </label>
-                <label className="checkbox-row">
-                  <input
-                    type="checkbox"
-                    checked={form.include_placeholders}
-                    onChange={(event) => setForm({ ...form, include_placeholders: event.target.checked })}
-                  />
-                  Relief placeholders
-                </label>
-              </div>
-              <div className="button-row">
-                <button className="primary" onClick={calculate}>
-                  <Calculator size={18} />
-                  Calculate
-                </button>
-                <button onClick={saveScenario}>
-                  <Save size={18} />
-                  Save
-                </button>
-              </div>
-            </section>
-
+          <div className="grid gap-4 p-5 md:p-8 lg:grid-cols-[420px_minmax(0,1fr)]">
+            <CalculatorInputs
+              form={form}
+              setForm={setForm}
+              rateListOptions={rateListOptions}
+              onCalculate={calculate}
+              onSave={saveScenario}
+            />
             <Results result={result} />
           </div>
         )}
 
         {tab === "advanced" && config && <AdvancedCalculator config={config} onError={setError} onNotice={setNotice} />}
-
-        {tab === "scenarios" && (
-          <section className="workspace">
-            <div className="table-panel">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>List</th>
-                    <th>Location</th>
-                    <th>Total</th>
-                    <th>Updated</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {scenarios.map((scenario) => (
-                    <tr key={scenario.id}>
-                      <td>{scenario.name}</td>
-                      <td>{scenario.request_json.rate_list_code}</td>
-                      <td>{scenario.request_json.location}</td>
-                      <td>{money(scenario.result_json.total)}</td>
-                      <td>{new Date(scenario.updated_at).toLocaleString()}</td>
-                      <td className="actions">
-                        <button onClick={() => loadScenario(scenario)}>
-                          <Calculator size={16} />
-                          Load
-                        </button>
-                        <button className="danger" onClick={() => removeScenario(scenario.id)}>
-                          <Trash2 size={16} />
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        )}
+        {tab === "scenarios" && <ScenarioList scenarios={scenarios} onLoad={loadScenario} onDelete={removeScenario} />}
 
         {tab === "admin" && config && activeRateList && (
-          <section className="workspace admin-workspace">
-            <div className="admin-hero">
-              <div>
-                <span className="eyebrow">Current admin period</span>
-                <h2>{activeRateList.name}</h2>
-                <div className="period-meta">
-                  <span>{activeRateList.start_date} to {activeRateList.end_date}</span>
-                  <span className={`badge ${activeRateList.status}`}>{activeRateList.status}</span>
-                  <span>{activeRateList.calculation_strategy}</span>
-                </div>
-              </div>
-              <div className="button-row compact">
-                <button className="primary" onClick={saveConfig}>
-                  <Save size={16} />
-                  Save config
-                </button>
-                <button onClick={resetConfig}>
-                  <RotateCcw size={16} />
-                  Reset seed
-                </button>
-              </div>
-            </div>
+          <AdminPage
+            config={config}
+            activeRateList={activeRateList}
+            activeYear={activeYear}
+            selectedRateList={selectedRateList}
+            selectedYear={selectedYear}
+            adminPanel={adminPanel}
+            setSelectedRateList={setSelectedRateList}
+            setSelectedYear={setSelectedYear}
+            setAdminPanel={setAdminPanel}
+            addRateList={addRateList}
+            addRateYear={addRateYear}
+            saveConfig={saveConfig}
+            resetConfig={resetConfig}
+            updateRateList={updateRateList}
+            updateYear={updateYear}
+            updateBand={updateBand}
+            addBand={addBand}
+            removeBand={removeBand}
+            updateYearRow={updateYearRow}
+            addYearRow={addYearRow}
+            removeYearRow={removeYearRow}
+          />
+        )}
+      </main>
+    </div>
+  );
+}
 
-            <div className="period-control-grid">
-              <section className="period-card">
-                <div className="period-card-icon">
-                  <Layers size={18} />
-                </div>
-                <label>
-                  Rating list period
-                  <select
-                    value={selectedRateList}
-                    onChange={(event) => {
-                      setSelectedRateList(Number(event.target.value));
-                      setSelectedYear(0);
-                    }}
-                  >
-                    {config.rate_lists.map((item, index) => (
-                      <option key={item.code} value={index}>
-                        {item.name} - {item.start_date} to {item.end_date}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button onClick={addRateList}>
-                  <Plus size={16} />
-                  New rating list
-                </button>
-                <p>Use this for a new revaluation cycle.</p>
-              </section>
+function NavButton({ active, icon: Icon, children, onClick }) {
+  return (
+    <Button
+      variant="ghost"
+      className={cn(
+        "h-9 justify-start border-transparent px-3 text-primary-foreground/80 hover:bg-white/10 hover:text-primary-foreground",
+        active && "bg-white text-primary shadow-sm hover:bg-white hover:text-primary",
+      )}
+      onClick={onClick}
+    >
+      <Icon className="h-4 w-4" />
+      {children}
+    </Button>
+  );
+}
 
-              <section className="period-card">
-                <div className="period-card-icon">
-                  <CalendarDays size={18} />
-                </div>
-                <label>
-                  Rate year
-                  <select value={selectedYear} onChange={(event) => setSelectedYear(Number(event.target.value))}>
-                    {activeRateList.years.map((year, index) => (
-                      <option key={`${year.label}-${index}`} value={index}>
-                        {year.label} - {year.start_date} to {year.end_date}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button onClick={addRateYear}>
-                  <Plus size={16} />
-                  New rate year
-                </button>
-                <p>Use this for the next April to March charging year.</p>
-              </section>
-            </div>
-
-            <div className="admin-tabs" role="tablist" aria-label="Admin sections">
-              {adminPanels.map(([value, label]) => (
-                <button
-                  key={value}
-                  className={adminPanel === value ? "admin-tab active" : "admin-tab"}
-                  onClick={() => setAdminPanel(value)}
-                >
-                  {label}
-                </button>
+function CalculatorInputs({ form, setForm, rateListOptions, onCalculate, onSave }) {
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between space-y-0">
+        <div>
+          <CardTitle>Inputs</CardTitle>
+          <CardDescription>Core liability calculation</CardDescription>
+        </div>
+        <Button variant="outline" size="icon" onClick={() => setForm(emptyForm)} title="Reset inputs">
+          <RotateCcw className="h-4 w-4" />
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Scenario name">
+            <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+          </Field>
+          <Field label="Rating list">
+            <NativeSelect value={form.rate_list_code} onChange={(event) => setForm({ ...form, rate_list_code: event.target.value })}>
+              {rateListOptions.map((item) => (
+                <option key={item.code} value={item.code}>
+                  {item.name} ({item.status})
+                </option>
               ))}
+            </NativeSelect>
+          </Field>
+          <Field label="Location">
+            <NativeSelect value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })}>
+              {locations.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </NativeSelect>
+          </Field>
+          <Field label="RV at previous list end">
+            <Input type="number" min="0" value={form.previous_rv} onChange={(event) => setForm({ ...form, previous_rv: event.target.value })} />
+          </Field>
+          <Field label="RV at revaluation">
+            <Input type="number" min="0" value={form.current_rv} onChange={(event) => setForm({ ...form, current_rv: event.target.value })} />
+          </Field>
+          <Field label="Liability start">
+            <Input type="date" value={form.liability_start_date || ""} onChange={(event) => setForm({ ...form, liability_start_date: event.target.value })} />
+          </Field>
+          <Field label="Liability end">
+            <Input type="date" value={form.liability_end_date || ""} onChange={(event) => setForm({ ...form, liability_end_date: event.target.value })} />
+          </Field>
+          <CheckboxField
+            label="Relief placeholders"
+            checked={form.include_placeholders}
+            onCheckedChange={(checked) => setForm({ ...form, include_placeholders: checked })}
+            className="self-end"
+          />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={onCalculate}>
+            <Calculator className="h-4 w-4" />
+            Calculate
+          </Button>
+          <Button variant="outline" onClick={onSave}>
+            <Save className="h-4 w-4" />
+            Save
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ScenarioList({ scenarios, onLoad, onDelete }) {
+  return (
+    <div className="p-5 md:p-8">
+      <Card>
+        <CardHeader>
+          <CardTitle>Saved scenarios</CardTitle>
+          <CardDescription>Load or remove basic calculation scenarios.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>List</TableHead>
+                <TableHead>Location</TableHead>
+                <TableHead>Total</TableHead>
+                <TableHead>Updated</TableHead>
+                <TableHead></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {scenarios.map((scenario) => (
+                <TableRow key={scenario.id}>
+                  <TableCell className="font-medium">{scenario.name}</TableCell>
+                  <TableCell>{scenario.request_json.rate_list_code}</TableCell>
+                  <TableCell>{scenario.request_json.location}</TableCell>
+                  <TableCell>{money(scenario.result_json.total)}</TableCell>
+                  <TableCell>{new Date(scenario.updated_at).toLocaleString()}</TableCell>
+                  <TableCell>
+                    <div className="flex justify-end gap-2">
+                      <Button variant="outline" size="sm" onClick={() => onLoad(scenario)}>
+                        <Calculator className="h-3.5 w-3.5" />
+                        Load
+                      </Button>
+                      <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => onDelete(scenario.id)} title="Delete">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function AdminPage(props) {
+  const {
+    config,
+    activeRateList,
+    activeYear,
+    selectedRateList,
+    selectedYear,
+    adminPanel,
+    setSelectedRateList,
+    setSelectedYear,
+    setAdminPanel,
+    addRateList,
+    addRateYear,
+    saveConfig,
+    resetConfig,
+    updateRateList,
+    updateYear,
+    updateBand,
+    addBand,
+    removeBand,
+    updateYearRow,
+    addYearRow,
+    removeYearRow,
+  } = props;
+
+  return (
+    <div className="space-y-4 p-5 md:p-8">
+      <Card>
+        <CardHeader className="flex-row items-start justify-between space-y-0">
+          <div>
+            <CardDescription>Current admin period</CardDescription>
+            <CardTitle className="mt-1">{activeRateList.name}</CardTitle>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Badge variant="outline">{activeRateList.start_date} to {activeRateList.end_date}</Badge>
+              <StatusBadge status={activeRateList.status} />
+              <Badge variant="secondary">{activeRateList.calculation_strategy}</Badge>
             </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={saveConfig}>
+              <Save className="h-4 w-4" />
+              Save config
+            </Button>
+            <Button variant="outline" onClick={resetConfig}>
+              <RotateCcw className="h-4 w-4" />
+              Reset seed
+            </Button>
+          </div>
+        </CardHeader>
+      </Card>
 
-            {adminPanel === "list" && (
-              <section className="tool-panel admin-panel">
-                <div className="section-title">
-                  <div>
-                    <h2>Rating List Setup</h2>
-                    <p>{activeRateList.start_date} to {activeRateList.end_date}</p>
-                  </div>
-                </div>
-                <div className="form-grid admin-form-grid">
-                  <Editable label="Code" value={activeRateList.code} onChange={(value) => updateRateList("code", value)} />
-                  <Editable label="Name" value={activeRateList.name} onChange={(value) => updateRateList("name", value)} />
-                  <SelectInput label="Country" value={activeRateList.country} options={countries} onChange={(value) => updateRateList("country", value)} />
-                  <SelectInput label="Status" value={activeRateList.status} options={statuses} onChange={(value) => updateRateList("status", value)} />
-                  <SelectInput
-                    label="Strategy"
-                    value={activeRateList.calculation_strategy}
-                    options={strategies}
-                    onChange={(value) => updateRateList("calculation_strategy", value)}
-                  />
-                  <Editable label="Start" type="date" value={activeRateList.start_date} onChange={(value) => updateRateList("start_date", value)} />
-                  <Editable label="End" type="date" value={activeRateList.end_date} onChange={(value) => updateRateList("end_date", value)} />
-                  <Editable
-                    label="Verified"
-                    type="date"
-                    value={activeRateList.verified_on || ""}
-                    onChange={(value) => updateRateList("verified_on", value || null)}
-                  />
-                </div>
-                <label className="wide-label">
-                  Source note
-                  <textarea value={activeRateList.source_note || ""} onChange={(event) => updateRateList("source_note", event.target.value)} />
-                </label>
-              </section>
-            )}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <PeriodPicker
+          icon={Layers}
+          label="Rating list period"
+          description="Use this for a new revaluation cycle."
+          value={selectedRateList}
+          onChange={(value) => {
+            setSelectedRateList(Number(value));
+            setSelectedYear(0);
+          }}
+          options={config.rate_lists.map((item, index) => [index, `${item.name} - ${item.start_date} to ${item.end_date}`])}
+          action={addRateList}
+          actionLabel="New rating list"
+        />
+        <PeriodPicker
+          icon={CalendarDays}
+          label="Rate year"
+          description="Use this for the next April to March charging year."
+          value={selectedYear}
+          onChange={(value) => setSelectedYear(Number(value))}
+          options={activeRateList.years.map((year, index) => [index, `${year.label} - ${year.start_date} to ${year.end_date}`])}
+          action={addRateYear}
+          actionLabel="New rate year"
+        />
+      </div>
 
-            {adminPanel === "year" && activeYear && (
-              <section className="tool-panel admin-panel">
-                <div className="section-title">
-                  <div>
-                    <h2>Year Rates</h2>
-                    <p>{activeYear.label} - {activeYear.start_date} to {activeYear.end_date}</p>
-                  </div>
-                </div>
-                <div className="form-grid admin-form-grid">
+      <Tabs value={adminPanel} onValueChange={setAdminPanel}>
+        <TabsList>
+          {adminPanels.map(([value, label]) => (
+            <TabsTrigger key={value} value={value}>
+              {label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+
+        <TabsContent value="list">
+          <Card>
+            <CardHeader>
+              <CardTitle>Rating List Setup</CardTitle>
+              <CardDescription>{activeRateList.start_date} to {activeRateList.end_date}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-4">
+                <Editable label="Code" value={activeRateList.code} onChange={(value) => updateRateList("code", value)} />
+                <Editable label="Name" value={activeRateList.name} onChange={(value) => updateRateList("name", value)} />
+                <SelectInput label="Country" value={activeRateList.country} options={countries} onChange={(value) => updateRateList("country", value)} />
+                <SelectInput label="Status" value={activeRateList.status} options={statuses} onChange={(value) => updateRateList("status", value)} />
+                <SelectInput label="Strategy" value={activeRateList.calculation_strategy} options={strategies} onChange={(value) => updateRateList("calculation_strategy", value)} />
+                <Editable label="Start" type="date" value={activeRateList.start_date} onChange={(value) => updateRateList("start_date", value)} />
+                <Editable label="End" type="date" value={activeRateList.end_date} onChange={(value) => updateRateList("end_date", value)} />
+                <Editable label="Verified" type="date" value={activeRateList.verified_on || ""} onChange={(value) => updateRateList("verified_on", value || null)} />
+              </div>
+              <Field label="Source note">
+                <Textarea value={activeRateList.source_note || ""} onChange={(event) => updateRateList("source_note", event.target.value)} />
+              </Field>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="year">
+          {activeYear && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Year Rates</CardTitle>
+                <CardDescription>{activeYear.label} - {activeYear.start_date} to {activeYear.end_date}</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="grid gap-3 md:grid-cols-4">
                   <Editable label="Label" value={activeYear.label} onChange={(value) => updateYear("label", value)} />
                   <Editable label="Start" type="date" value={activeYear.start_date} onChange={(value) => updateYear("start_date", value)} />
                   <Editable label="End" type="date" value={activeYear.end_date} onChange={(value) => updateYear("end_date", value)} />
-                  <Editable
-                    label="Inflation factor"
-                    type="number"
-                    value={decimal(activeYear.inflation_factor)}
-                    onChange={(value) => updateYear("inflation_factor", value)}
-                  />
+                  <Editable label="Inflation factor" type="number" value={decimal(activeYear.inflation_factor)} onChange={(value) => updateYear("inflation_factor", value)} />
                 </div>
                 <AdminCollection
                   title="Multipliers"
@@ -755,17 +760,19 @@ function App() {
                     })
                   }
                 />
-              </section>
-            )}
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
 
-            {adminPanel === "transition" && activeYear && (
-              <section className="tool-panel admin-panel">
-                <div className="section-title">
-                  <div>
-                    <h2>Transition Rules</h2>
-                    <p>Bands are list-wide. Caps are year-specific.</p>
-                  </div>
-                </div>
+        <TabsContent value="transition">
+          {activeYear && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Transition Rules</CardTitle>
+                <CardDescription>Bands are list-wide. Caps are year-specific.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
                 <AdminCollection
                   title="Bands"
                   rows={activeRateList.transition_bands}
@@ -792,26 +799,21 @@ function App() {
                   ]}
                   onChange={(index, field, value) => updateYearRow("transition_caps", index, field, value)}
                   onRemove={(index) => removeYearRow("transition_caps", index)}
-                  onAdd={() =>
-                    addYearRow("transition_caps", {
-                      category: "medium",
-                      cap_percent: "0",
-                      inflation_factor: "1",
-                      appropriate_fraction: "1",
-                    })
-                  }
+                  onAdd={() => addYearRow("transition_caps", { category: "medium", cap_percent: "0", inflation_factor: "1", appropriate_fraction: "1" })}
                 />
-              </section>
-            )}
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
 
-            {adminPanel === "supplements" && activeYear && (
-              <section className="tool-panel admin-panel">
-                <div className="section-title">
-                  <div>
-                    <h2>Supplements</h2>
-                    <p>{activeYear.label}</p>
-                  </div>
-                </div>
+        <TabsContent value="supplements">
+          {activeYear && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Supplements</CardTitle>
+                <CardDescription>{activeYear.label}</CardDescription>
+              </CardHeader>
+              <CardContent>
                 <AdminCollection
                   title="Supplement Rules"
                   rows={activeYear.supplements}
@@ -842,66 +844,89 @@ function App() {
                     })
                   }
                 />
-              </section>
-            )}
-          </section>
-        )}
-      </main>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
+  );
+}
+
+function PeriodPicker({ icon: Icon, label, description, value, onChange, options, action, actionLabel }) {
+  return (
+    <Card>
+      <CardContent className="grid gap-3 p-4 sm:grid-cols-[40px_minmax(0,1fr)_auto] sm:items-center">
+        <div className="grid h-10 w-10 place-items-center rounded-md border bg-secondary text-primary">
+          <Icon className="h-4 w-4" />
+        </div>
+        <Field label={label}>
+          <NativeSelect value={value} onChange={(event) => onChange(event.target.value)}>
+            {options.map(([optionValue, optionLabel]) => (
+              <option key={optionValue} value={optionValue}>
+                {optionLabel}
+              </option>
+            ))}
+          </NativeSelect>
+        </Field>
+        <Button variant="outline" onClick={action}>
+          <Plus className="h-4 w-4" />
+          {actionLabel}
+        </Button>
+        <p className="text-sm text-muted-foreground sm:col-start-2 sm:col-end-4">{description}</p>
+      </CardContent>
+    </Card>
   );
 }
 
 function Editable({ label, value, onChange, type = "text" }) {
   return (
-    <label>
-      {label}
-      <input type={type} value={value || ""} onChange={(event) => onChange(event.target.value)} />
-    </label>
+    <Field label={label}>
+      <Input type={type} value={value || ""} onChange={(event) => onChange(event.target.value)} />
+    </Field>
   );
 }
 
 function SelectInput({ label, value, options, onChange }) {
   return (
-    <label>
-      {label}
-      <select value={value || ""} onChange={(event) => onChange(event.target.value)}>
+    <Field label={label}>
+      <NativeSelect value={value || ""} onChange={(event) => onChange(event.target.value)}>
         {options.map(([optionValue, optionLabel]) => (
           <option key={optionValue} value={optionValue}>
             {optionLabel}
           </option>
         ))}
-      </select>
-    </label>
+      </NativeSelect>
+    </Field>
   );
+}
+
+function StatusBadge({ status }) {
+  const variant = status === "active" ? "success" : status === "draft" ? "warning" : "outline";
+  return <Badge variant={variant}>{status}</Badge>;
 }
 
 function TableControl({ column, value, onChange }) {
   if (column.type === "select") {
     return (
-      <select value={value || ""} onChange={(event) => onChange(event.target.value)}>
+      <NativeSelect className="h-8 min-w-32" value={value || ""} onChange={(event) => onChange(event.target.value)}>
         {column.allowEmpty && <option value="">None</option>}
         {column.options.map(([optionValue, optionLabel]) => (
           <option key={optionValue} value={optionValue}>
             {optionLabel}
           </option>
         ))}
-      </select>
+      </NativeSelect>
     );
   }
 
   if (column.type === "boolean") {
-    return (
-      <input
-        className="table-checkbox"
-        type="checkbox"
-        checked={Boolean(value)}
-        onChange={(event) => onChange(event.target.checked)}
-      />
-    );
+    return <Checkbox checked={Boolean(value)} onCheckedChange={(checked) => onChange(Boolean(checked))} />;
   }
 
   return (
-    <input
+    <Input
+      className="h-8 min-w-24"
       type={column.type || "text"}
       step={column.step || "1"}
       value={decimal(value)}
@@ -912,135 +937,130 @@ function TableControl({ column, value, onChange }) {
 
 function EditableTable({ rows, columns, onChange, onRemove }) {
   return (
-    <div className="table-panel embedded">
-      <table>
-        <thead>
-          <tr>
+    <div className="rounded-md border">
+      <Table>
+        <TableHeader>
+          <TableRow>
             {columns.map((column) => (
-              <th key={column.field}>{column.label}</th>
+              <TableHead key={column.field}>{column.label}</TableHead>
             ))}
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
+            <TableHead></TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {rows.map((row, index) => (
-            <tr key={`${row.code || row.category || row.location_group}-${index}`}>
+            <TableRow key={`${row.code || row.category || row.location_group}-${index}`}>
               {columns.map((column) => (
-                <td key={column.field}>
-                  <TableControl
-                    column={column}
-                    value={row[column.field]}
-                    onChange={(value) => onChange(index, column.field, value)}
-                  />
-                </td>
+                <TableCell key={column.field}>
+                  <TableControl column={column} value={row[column.field]} onChange={(value) => onChange(index, column.field, value)} />
+                </TableCell>
               ))}
-              <td>
-                <button className="icon-button danger" onClick={() => onRemove(index)} title="Delete row">
-                  <Trash2 size={16} />
-                </button>
-              </td>
-            </tr>
+              <TableCell>
+                <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => onRemove(index)} title="Delete row">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }
 
 function AdminCollection({ title, rows, columns, onChange, onRemove, onAdd }) {
   return (
-    <div className="admin-section">
-      <div className="panel-heading small-heading">
-        <h3>{title}</h3>
-        <button onClick={onAdd}>
-          <Plus size={16} />
+    <section className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold">{title}</h3>
+        <Button variant="outline" size="sm" onClick={onAdd}>
+          <Plus className="h-3.5 w-3.5" />
           Add row
-        </button>
+        </Button>
       </div>
       <EditableTable rows={rows} columns={columns} onChange={onChange} onRemove={onRemove} />
-    </div>
+    </section>
   );
 }
 
 function Results({ result }) {
   if (!result) {
     return (
-      <section className="tool-panel empty-state">
-        <Calculator size={40} />
-        <h2>No calculation yet</h2>
-      </section>
+      <Card className="grid min-h-64 place-items-center text-muted-foreground">
+        <div className="grid justify-items-center gap-2">
+          <Calculator className="h-9 w-9" />
+          <CardTitle className="text-sm">No calculation yet</CardTitle>
+        </div>
+      </Card>
     );
   }
 
   return (
-    <section className="results-stack">
-      <div className="summary-strip">
-        <div>
-          <span>Total</span>
-          <strong>{money(result.total)}</strong>
-        </div>
-        <div>
-          <span>Strategy</span>
-          <strong>{result.calculation_strategy}</strong>
-        </div>
-        <div>
-          <span>Status</span>
-          <strong>{result.status}</strong>
-        </div>
+    <section className="space-y-4">
+      <div className="grid gap-3 md:grid-cols-3">
+        <MetricCard label="Total" value={money(result.total)} />
+        <MetricCard label="Strategy" value={result.calculation_strategy} />
+        <MetricCard label="Status" value={result.status} />
       </div>
       {result.annual.map((year) => (
-        <div className="table-panel" key={year.year_label}>
-          <div className="year-summary">
-            <h2>{year.year_label}</h2>
-            <div>
-              <span>{year.transition_category}</span>
-              <strong>{money(year.total)}</strong>
+        <Card key={year.year_label}>
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardTitle>{year.year_label}</CardTitle>
+            <div className="text-right">
+              <CardDescription>{year.transition_category}</CardDescription>
+              <div className="font-semibold">{money(year.total)}</div>
             </div>
-          </div>
-          <div className="metrics">
-            <Metric label="BL" value={money(year.base_liability)} />
-            <Metric label="NCA" value={money(year.notional_chargeable_amount)} />
-            <Metric label="TL" value={money(year.transitional_limit)} />
-            <Metric label="Days" value={`${year.days_charged}/${year.days_in_year}`} />
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Line</th>
-                <th>RV</th>
-                <th>Multiplier</th>
-                <th>Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {year.lines.map((line) => (
-                <tr key={line.code}>
-                  <td>{line.label}</td>
-                  <td>{line.rateable_value ? money(line.rateable_value) : ""}</td>
-                  <td>{line.multiplier || ""}</td>
-                  <td className={Number(line.amount) < 0 ? "negative" : ""}>{money(line.amount)}</td>
-                </tr>
-              ))}
-              <tr className="total-row">
-                <td>Total</td>
-                <td></td>
-                <td></td>
-                <td>{money(year.total)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-4">
+              <MetricCard label="BL" value={money(year.base_liability)} compact />
+              <MetricCard label="NCA" value={money(year.notional_chargeable_amount)} compact />
+              <MetricCard label="TL" value={money(year.transitional_limit)} compact />
+              <MetricCard label="Days" value={`${year.days_charged}/${year.days_in_year}`} compact />
+            </div>
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Line</TableHead>
+                    <TableHead>RV</TableHead>
+                    <TableHead>Multiplier</TableHead>
+                    <TableHead>Amount</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {year.lines.map((line) => (
+                    <TableRow key={line.code}>
+                      <TableCell>{line.label}</TableCell>
+                      <TableCell>{line.rateable_value ? money(line.rateable_value) : ""}</TableCell>
+                      <TableCell>{line.multiplier || ""}</TableCell>
+                      <TableCell className={Number(line.amount) < 0 ? "text-destructive" : ""}>{money(line.amount)}</TableCell>
+                    </TableRow>
+                  ))}
+                  <TableRow className="bg-muted/60 font-semibold">
+                    <TableCell>Total</TableCell>
+                    <TableCell></TableCell>
+                    <TableCell></TableCell>
+                    <TableCell>{money(year.total)}</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
       ))}
     </section>
   );
 }
 
-function Metric({ label, value }) {
+function MetricCard({ label, value, compact = false }) {
   return (
-    <div>
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
+    <Card className={cn(compact && "shadow-none")}>
+      <CardContent className={cn("p-4", compact && "p-3")}>
+        <div className="text-xs font-medium text-muted-foreground">{label}</div>
+        <div className="mt-1 truncate text-sm font-semibold">{value}</div>
+      </CardContent>
+    </Card>
   );
 }
 

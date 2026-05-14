@@ -2,6 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { Calculator, Copy, Plus, RotateCcw, Save, Trash2 } from "lucide-react";
 
 import { api } from "./api";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./components/ui/accordion";
+import { Badge } from "./components/ui/badge";
+import { Button } from "./components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./components/ui/card";
+import { Checkbox, CheckboxField } from "./components/ui/checkbox";
+import { Input } from "./components/ui/input";
+import { Field } from "./components/ui/label";
+import { NativeSelect } from "./components/ui/select";
+import { SwitchField } from "./components/ui/switch";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./components/ui/table";
 
 const locations = [
   ["england", "England"],
@@ -273,78 +283,77 @@ export function AdvancedCalculator({ config, onError, onNotice }) {
   }
 
   return (
-    <section className="workspace advanced-workspace">
-      <div className="admin-hero">
-        <div>
-          <span className="eyebrow">Advanced calculation period</span>
-          <h2>{activeRateList?.name || "No rating list loaded"}</h2>
-          <div className="period-meta">
-            {activeRateList && <span>{activeRateList.start_date} to {activeRateList.end_date}</span>}
-            {activeRateList && <span className={`badge ${activeRateList.status}`}>{activeRateList.status}</span>}
-            {result && <span>Saving {money(result.total_saving)}</span>}
+    <section className="space-y-4 p-5 md:p-8">
+      <Card>
+        <CardHeader className="flex-row items-start justify-between space-y-0">
+          <div>
+            <CardDescription>Advanced calculation period</CardDescription>
+            <CardTitle className="mt-1">{activeRateList?.name || "No rating list loaded"}</CardTitle>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {activeRateList && <Badge variant="outline">{activeRateList.start_date} to {activeRateList.end_date}</Badge>}
+              {activeRateList && <Badge variant={activeRateList.status === "active" ? "success" : "warning"}>{activeRateList.status}</Badge>}
+              {result && <Badge variant="secondary">Saving {money(result.total_saving)}</Badge>}
+            </div>
           </div>
-        </div>
-        <div className="button-row compact">
-          <button className="primary" onClick={preview}>
-            <Calculator size={16} />
-            Calculate
-          </button>
-          <button onClick={save}>
-            <Save size={16} />
-            Save
-          </button>
-          <button onClick={() => setForm(adjustSbrrYears(emptyAdvancedForm(), rateYears.length))}>
-            <RotateCcw size={16} />
-            Reset
-          </button>
-        </div>
-      </div>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={preview}>
+              <Calculator className="h-4 w-4" />
+              Calculate
+            </Button>
+            <Button variant="outline" onClick={save}>
+              <Save className="h-4 w-4" />
+              Save
+            </Button>
+            <Button variant="outline" onClick={() => setForm(adjustSbrrYears(emptyAdvancedForm(), rateYears.length))}>
+              <RotateCcw className="h-4 w-4" />
+              Reset
+            </Button>
+          </div>
+        </CardHeader>
+      </Card>
 
-      <section className="tool-panel">
-        <div className="form-grid admin-form-grid">
-          <label>
-            Scenario name
-            <input value={form.name} onChange={(event) => update("name", event.target.value)} />
-          </label>
-          <label>
-            Rating list
-            <select
+      <Card>
+        <CardHeader>
+          <CardTitle>Scenario setup</CardTitle>
+          <CardDescription>Shared metadata and rating-list context.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-4">
+          <Field label="Scenario name">
+            <Input value={form.name} onChange={(event) => update("name", event.target.value)} />
+          </Field>
+          <Field label="Rating list">
+            <NativeSelect
               value={form.rate_list_code}
-              onChange={(event) => setForm(adjustSbrrYears({ ...form, rate_list_code: event.target.value }, rateLists.find((item) => item.code === event.target.value)?.years?.length || 0))}
+              onChange={(event) => {
+                const yearCount = rateLists.find((item) => item.code === event.target.value)?.years?.length || 0;
+                setForm(adjustSbrrYears({ ...form, rate_list_code: event.target.value }, yearCount));
+              }}
             >
               {rateLists.map((item) => (
                 <option key={item.code} value={item.code}>
                   {item.name} ({item.status})
                 </option>
               ))}
-            </select>
-          </label>
-          <label>
-            Location
-            <select value={form.location} onChange={(event) => update("location", event.target.value)}>
+            </NativeSelect>
+          </Field>
+          <Field label="Location">
+            <NativeSelect value={form.location} onChange={(event) => update("location", event.target.value)}>
               {locations.map(([value, label]) => (
                 <option key={value} value={value}>
                   {label}
                 </option>
               ))}
-            </select>
-          </label>
-          <label>
-            Calculation number
-            <input type="number" min="1" value={form.calculation_number} onChange={(event) => update("calculation_number", event.target.value)} />
-          </label>
-          <label className="checkbox-row">
-            <input type="checkbox" checked={form.hypothetical} onChange={(event) => update("hypothetical", event.target.checked)} />
-            Hypothetical
-          </label>
-          <label className="checkbox-row">
-            <input type="checkbox" checked={form.allow_dates_any_order} onChange={(event) => update("allow_dates_any_order", event.target.checked)} />
-            Allow dates in any order
-          </label>
-        </div>
-      </section>
+            </NativeSelect>
+          </Field>
+          <Field label="Calculation number">
+            <Input type="number" min="1" value={form.calculation_number} onChange={(event) => update("calculation_number", event.target.value)} />
+          </Field>
+          <SwitchField label="Hypothetical" checked={form.hypothetical} onCheckedChange={(checked) => update("hypothetical", checked)} />
+          <SwitchField label="Allow dates in any order" checked={form.allow_dates_any_order} onCheckedChange={(checked) => update("allow_dates_any_order", checked)} />
+        </CardContent>
+      </Card>
 
-      <div className="advanced-sides">
+      <div className="grid gap-4 xl:grid-cols-2">
         <SidePanel
           title="Original"
           sideName="original"
@@ -369,10 +378,10 @@ export function AdvancedCalculator({ config, onError, onNotice }) {
           onRemove={removeRow}
           onSbrr={updateSbrr}
           action={
-            <button onClick={copyOriginal}>
-              <Copy size={16} />
+            <Button variant="outline" size="sm" onClick={copyOriginal}>
+              <Copy className="h-3.5 w-3.5" />
               Copy original
-            </button>
+            </Button>
           }
         />
       </div>
@@ -386,148 +395,150 @@ export function AdvancedCalculator({ config, onError, onNotice }) {
 
 function SidePanel({ title, sideName, side, rateYears, onSide, onNested, onRow, onAdd, onRemove, onSbrr, action }) {
   return (
-    <section className="tool-panel advanced-side">
-      <div className="panel-heading">
-        <h2>{title}</h2>
+    <Card>
+      <CardHeader className="flex-row items-center justify-between space-y-0">
+        <div>
+          <CardTitle>{title}</CardTitle>
+          <CardDescription>Scenario side inputs</CardDescription>
+        </div>
         {action}
-      </div>
-      <div className="form-grid">
-        <NumberInput label="Prior-list RV" value={side.prior_rv} onChange={(value) => onSide(sideName, "prior_rv", value)} />
-        <NumberInput label="RV at list start" value={side.start_rv} onChange={(value) => onSide(sideName, "start_rv", value)} />
-        <NumberInput label="% payable" value={side.payable_percent} step="0.01" onChange={(value) => onSide(sideName, "payable_percent", value)} />
-        <NumberInput label="Base liability override" value={side.base_liability_override} onChange={(value) => onSide(sideName, "base_liability_override", value)} />
-        <CheckInput label="Vacant at list start" checked={side.vacant} onChange={(value) => onSide(sideName, "vacant", value)} />
-        <CheckInput label="Charity" checked={side.charity} onChange={(value) => onSide(sideName, "charity", value)} />
-        <CheckInput label="RHL multiplier/relief" checked={side.is_rhl} onChange={(value) => onSide(sideName, "is_rhl", value)} />
-        <CheckInput label="Retail relief" checked={side.retail_relief} onChange={(value) => onSide(sideName, "retail_relief", value)} />
-      </div>
-
-      <details className="advanced-section" open>
-        <summary>Date changes</summary>
-        <RowsTable
-          rows={side.changes}
-          columns={[
-            ["from_date", "From", "date"],
-            ["rv", "RV", "number"],
-            ["payable_percent", "% payable", "number"],
-            ["vacant", "Vacant", "checkbox"],
-            ["certify", "Certify", "checkbox"],
-          ]}
-          onChange={(index, field, value) => onRow(sideName, "changes", index, field, value)}
-          onRemove={(index) => onRemove(sideName, "changes", index)}
-          onAdd={() => onAdd(sideName, "changes", { from_date: "", rv: "", payable_percent: "1", vacant: false, certify: false })}
-        />
-      </details>
-
-      <details className="advanced-section">
-        <summary>SBRR, SSBR and certificates</summary>
-        <div className="year-flag-grid">
-          {rateYears.map((year, index) => (
-            <CheckInput
-              key={year.label}
-              label={`SBRR ${year.label}`}
-              checked={Boolean(side.sbrr_by_year[index])}
-              onChange={(value) => onSbrr(sideName, index, value)}
-            />
-          ))}
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 md:grid-cols-2">
+          <NumberInput label="Prior-list RV" value={side.prior_rv} onChange={(value) => onSide(sideName, "prior_rv", value)} />
+          <NumberInput label="RV at list start" value={side.start_rv} onChange={(value) => onSide(sideName, "start_rv", value)} />
+          <NumberInput label="% payable" value={side.payable_percent} step="0.01" onChange={(value) => onSide(sideName, "payable_percent", value)} />
+          <NumberInput label="Base liability override" value={side.base_liability_override} onChange={(value) => onSide(sideName, "base_liability_override", value)} />
+          <CheckboxField label="Vacant at list start" checked={side.vacant} onCheckedChange={(value) => onSide(sideName, "vacant", value)} />
+          <CheckboxField label="Charity" checked={side.charity} onCheckedChange={(value) => onSide(sideName, "charity", value)} />
+          <CheckboxField label="RHL multiplier/relief" checked={side.is_rhl} onCheckedChange={(value) => onSide(sideName, "is_rhl", value)} />
+          <CheckboxField label="Retail relief" checked={side.retail_relief} onCheckedChange={(value) => onSide(sideName, "retail_relief", value)} />
         </div>
-        <div className="form-grid">
-          <CheckInput label="SSBR current" checked={side.ssbr_current} onChange={(value) => onSide(sideName, "ssbr_current", value)} />
-          <CheckInput label="SSBR previous" checked={side.ssbr_previous} onChange={(value) => onSide(sideName, "ssbr_previous", value)} />
-          <NumberInput label="SSBR prior liability" value={side.ssbr_prior_liability} onChange={(value) => onSide(sideName, "ssbr_prior_liability", value)} />
-          <label>
-            Certificate type
-            <select value={side.certificate.certificate_type} onChange={(event) => onNested(sideName, "certificate", "certificate_type", event.target.value)}>
-              <option value="reg18_dos">Reg 18 / DOS</option>
-              <option value="reg16_mcc">Reg 16 / MCC</option>
-            </select>
-          </label>
-          <NumberInput label="Start certificate value" value={side.certificate.start_value} onChange={(value) => onNested(sideName, "certificate", "start_value", value)} />
-          <label>
-            Start certificate date
-            <input type="date" value={side.certificate.start_date} onChange={(event) => onNested(sideName, "certificate", "start_date", event.target.value)} />
-          </label>
-          <NumberInput label="Prior certificate value" value={side.certificate.prior_value} onChange={(value) => onNested(sideName, "certificate", "prior_value", value)} />
-          <label>
-            Prior certificate date
-            <input type="date" value={side.certificate.prior_date} onChange={(event) => onNested(sideName, "certificate", "prior_date", event.target.value)} />
-          </label>
-        </div>
-      </details>
 
-      <details className="advanced-section">
-        <summary>Improvement relief</summary>
-        <RowsTable
-          rows={side.improvement_reliefs}
-          columns={[
-            ["from_date", "From", "date"],
-            ["to_date", "To", "date"],
-            ["certified_value", "Certified value", "number"],
-          ]}
-          onChange={(index, field, value) => onRow(sideName, "improvement_reliefs", index, field, value)}
-          onRemove={(index) => onRemove(sideName, "improvement_reliefs", index)}
-          onAdd={() => onAdd(sideName, "improvement_reliefs", { from_date: "", to_date: "", certified_value: "" })}
-        />
-      </details>
-    </section>
+        <Accordion type="multiple" defaultValue={["dates"]}>
+          <AccordionItem value="dates">
+            <AccordionTrigger>Date changes</AccordionTrigger>
+            <AccordionContent>
+              <RowsTable
+                rows={side.changes}
+                columns={[
+                  ["from_date", "From", "date"],
+                  ["rv", "RV", "number"],
+                  ["payable_percent", "% payable", "number"],
+                  ["vacant", "Vacant", "checkbox"],
+                  ["certify", "Certify", "checkbox"],
+                ]}
+                onChange={(index, field, value) => onRow(sideName, "changes", index, field, value)}
+                onRemove={(index) => onRemove(sideName, "changes", index)}
+                onAdd={() => onAdd(sideName, "changes", { from_date: "", rv: "", payable_percent: "1", vacant: false, certify: false })}
+              />
+            </AccordionContent>
+          </AccordionItem>
+
+          <AccordionItem value="reliefs">
+            <AccordionTrigger>SBRR, SSBR and certificates</AccordionTrigger>
+            <AccordionContent className="space-y-4">
+              <div className="grid gap-2 md:grid-cols-3">
+                {rateYears.map((year, index) => (
+                  <CheckboxField
+                    key={year.label}
+                    label={`SBRR ${year.label}`}
+                    checked={Boolean(side.sbrr_by_year[index])}
+                    onCheckedChange={(value) => onSbrr(sideName, index, value)}
+                  />
+                ))}
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <CheckboxField label="SSBR current" checked={side.ssbr_current} onCheckedChange={(value) => onSide(sideName, "ssbr_current", value)} />
+                <CheckboxField label="SSBR previous" checked={side.ssbr_previous} onCheckedChange={(value) => onSide(sideName, "ssbr_previous", value)} />
+                <NumberInput label="SSBR prior liability" value={side.ssbr_prior_liability} onChange={(value) => onSide(sideName, "ssbr_prior_liability", value)} />
+                <Field label="Certificate type">
+                  <NativeSelect value={side.certificate.certificate_type} onChange={(event) => onNested(sideName, "certificate", "certificate_type", event.target.value)}>
+                    <option value="reg18_dos">Reg 18 / DOS</option>
+                    <option value="reg16_mcc">Reg 16 / MCC</option>
+                  </NativeSelect>
+                </Field>
+                <NumberInput label="Start certificate value" value={side.certificate.start_value} onChange={(value) => onNested(sideName, "certificate", "start_value", value)} />
+                <Field label="Start certificate date">
+                  <Input type="date" value={side.certificate.start_date} onChange={(event) => onNested(sideName, "certificate", "start_date", event.target.value)} />
+                </Field>
+                <NumberInput label="Prior certificate value" value={side.certificate.prior_value} onChange={(value) => onNested(sideName, "certificate", "prior_value", value)} />
+                <Field label="Prior certificate date">
+                  <Input type="date" value={side.certificate.prior_date} onChange={(event) => onNested(sideName, "certificate", "prior_date", event.target.value)} />
+                </Field>
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+
+          <AccordionItem value="improvements">
+            <AccordionTrigger>Improvement relief</AccordionTrigger>
+            <AccordionContent>
+              <RowsTable
+                rows={side.improvement_reliefs}
+                columns={[
+                  ["from_date", "From", "date"],
+                  ["to_date", "To", "date"],
+                  ["certified_value", "Certified value", "number"],
+                ]}
+                onChange={(index, field, value) => onRow(sideName, "improvement_reliefs", index, field, value)}
+                onRemove={(index) => onRemove(sideName, "improvement_reliefs", index)}
+                onAdd={() => onAdd(sideName, "improvement_reliefs", { from_date: "", to_date: "", certified_value: "" })}
+              />
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      </CardContent>
+    </Card>
   );
 }
 
 function NumberInput({ label, value, onChange, step = "1" }) {
   return (
-    <label>
-      {label}
-      <input type="number" min="0" step={step} value={value || ""} onChange={(event) => onChange(event.target.value)} />
-    </label>
-  );
-}
-
-function CheckInput({ label, checked, onChange }) {
-  return (
-    <label className="checkbox-row">
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
-      {label}
-    </label>
+    <Field label={label}>
+      <Input type="number" min="0" step={step} value={value || ""} onChange={(event) => onChange(event.target.value)} />
+    </Field>
   );
 }
 
 function RowsTable({ rows, columns, onChange, onRemove, onAdd }) {
   return (
-    <div className="table-panel embedded advanced-table">
-      <table>
-        <thead>
-          <tr>
-            {columns.map(([, label]) => (
-              <th key={label}>{label}</th>
-            ))}
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => (
-            <tr key={index}>
-              {columns.map(([field, label, type]) => (
-                <td key={field}>
-                  {type === "checkbox" ? (
-                    <input className="table-checkbox" type="checkbox" checked={Boolean(row[field])} onChange={(event) => onChange(index, field, event.target.checked)} aria-label={label} />
-                  ) : (
-                    <input type={type} value={row[field] || ""} onChange={(event) => onChange(index, field, event.target.value)} aria-label={label} />
-                  )}
-                </td>
+    <div className="space-y-3">
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              {columns.map(([, label]) => (
+                <TableHead key={label}>{label}</TableHead>
               ))}
-              <td>
-                <button className="icon-button danger" onClick={() => onRemove(index)} title="Delete row">
-                  <Trash2 size={16} />
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <button className="add-row-button" onClick={onAdd}>
-        <Plus size={16} />
+              <TableHead></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row, index) => (
+              <TableRow key={index}>
+                {columns.map(([field, label, type]) => (
+                  <TableCell key={field}>
+                    {type === "checkbox" ? (
+                      <Checkbox checked={Boolean(row[field])} onCheckedChange={(checked) => onChange(index, field, Boolean(checked))} aria-label={label} />
+                    ) : (
+                      <Input className="h-8 min-w-28" type={type} value={row[field] || ""} onChange={(event) => onChange(index, field, event.target.value)} aria-label={label} />
+                    )}
+                  </TableCell>
+                ))}
+                <TableCell>
+                  <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => onRemove(index)} title="Delete row">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+      <Button variant="outline" size="sm" onClick={onAdd}>
+        <Plus className="h-3.5 w-3.5" />
         Add row
-      </button>
+      </Button>
     </div>
   );
 }
@@ -537,74 +548,82 @@ function ValidationSummary({ result }) {
   const errors = result.issues.filter((item) => item.severity === "error");
   const warnings = result.issues.filter((item) => item.severity === "warning");
   return (
-    <section className="tool-panel validation-panel">
-      <div className="panel-heading">
-        <h2>Validation</h2>
-        <span className={errors.length ? "badge draft" : "badge active"}>{errors.length ? `${errors.length} errors` : `${warnings.length} warnings`}</span>
-      </div>
-      <ul>
-        {result.issues.map((item, index) => (
-          <li key={`${item.field}-${index}`} className={item.severity}>
-            <strong>{item.field}</strong> {item.message}
-          </li>
-        ))}
-      </ul>
-    </section>
+    <Card>
+      <CardHeader className="flex-row items-center justify-between space-y-0">
+        <div>
+          <CardTitle>Validation</CardTitle>
+          <CardDescription>Resolve blocking errors before relying on the result.</CardDescription>
+        </div>
+        <Badge variant={errors.length ? "destructive" : "warning"}>
+          {errors.length ? `${errors.length} errors` : `${warnings.length} warnings`}
+        </Badge>
+      </CardHeader>
+      <CardContent>
+        <ul className="grid gap-2 text-sm">
+          {result.issues.map((item, index) => (
+            <li key={`${item.field}-${index}`} className={item.severity === "error" ? "text-destructive" : "text-[#6e5500]"}>
+              <span className="font-medium">{item.field}</span> {item.message}
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
   );
 }
 
 function AdvancedResults({ result }) {
   if (!result || result.comparison.length === 0) {
     return (
-      <section className="tool-panel empty-state">
-        <Calculator size={36} />
-        <h2>No advanced calculation yet</h2>
-      </section>
+      <Card className="grid min-h-64 place-items-center text-muted-foreground">
+        <div className="grid justify-items-center gap-2">
+          <Calculator className="h-9 w-9" />
+          <CardTitle className="text-sm">No advanced calculation yet</CardTitle>
+        </div>
+      </Card>
     );
   }
 
   return (
-    <section className="results-stack">
-      <div className="summary-strip">
-        <div>
-          <span>Original</span>
-          <strong>{money(result.total_original)}</strong>
-        </div>
-        <div>
-          <span>Revised</span>
-          <strong>{money(result.total_revised)}</strong>
-        </div>
-        <div>
-          <span>Saving</span>
-          <strong>{money(result.total_saving)}</strong>
-        </div>
+    <section className="space-y-4">
+      <div className="grid gap-3 md:grid-cols-3">
+        <MetricCard label="Original" value={money(result.total_original)} />
+        <MetricCard label="Revised" value={money(result.total_revised)} />
+        <MetricCard label="Saving" value={money(result.total_saving)} />
       </div>
-      <div className="table-panel">
-        <table>
-          <thead>
-            <tr>
-              <th>Rate year</th>
-              <th>Original</th>
-              <th>Original basis</th>
-              <th>Revised</th>
-              <th>Revised basis</th>
-              <th>Saving</th>
-            </tr>
-          </thead>
-          <tbody>
-            {result.comparison.map((row) => (
-              <tr key={row.year_label}>
-                <td>{row.year_label}</td>
-                <td>{money(row.original_total)}</td>
-                <td>{row.original_phased ? "Phased" : "True"}</td>
-                <td>{money(row.revised_total)}</td>
-                <td>{row.revised_phased ? "Phased" : "True"}</td>
-                <td className={Number(row.saving) < 0 ? "negative" : ""}>{money(row.saving)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Annual comparison</CardTitle>
+          <CardDescription>Original liability, revised liability, and saving by rate year.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Rate year</TableHead>
+                  <TableHead>Original</TableHead>
+                  <TableHead>Original basis</TableHead>
+                  <TableHead>Revised</TableHead>
+                  <TableHead>Revised basis</TableHead>
+                  <TableHead>Saving</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {result.comparison.map((row) => (
+                  <TableRow key={row.year_label}>
+                    <TableCell className="font-medium">{row.year_label}</TableCell>
+                    <TableCell>{money(row.original_total)}</TableCell>
+                    <TableCell>{row.original_phased ? "Phased" : "True"}</TableCell>
+                    <TableCell>{money(row.revised_total)}</TableCell>
+                    <TableCell>{row.revised_phased ? "Phased" : "True"}</TableCell>
+                    <TableCell className={Number(row.saving) < 0 ? "text-destructive" : "font-medium text-primary"}>{money(row.saving)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
     </section>
   );
 }
@@ -612,38 +631,58 @@ function AdvancedResults({ result }) {
 function SavedAdvancedScenarios({ scenarios, onLoad, onDelete }) {
   if (!scenarios.length) return null;
   return (
-    <section className="table-panel">
-      <table>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>List</th>
-            <th>Saving</th>
-            <th>Updated</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {scenarios.map((scenario) => (
-            <tr key={scenario.id}>
-              <td>{scenario.name}</td>
-              <td>{scenario.request_json.rate_list_code}</td>
-              <td>{money(scenario.result_json.total_saving)}</td>
-              <td>{new Date(scenario.updated_at).toLocaleString()}</td>
-              <td className="actions">
-                <button onClick={() => onLoad(scenario)}>
-                  <Calculator size={16} />
-                  Load
-                </button>
-                <button className="danger" onClick={() => onDelete(scenario.id)}>
-                  <Trash2 size={16} />
-                  Delete
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
+    <Card>
+      <CardHeader>
+        <CardTitle>Saved advanced scenarios</CardTitle>
+        <CardDescription>Reload previous original-vs-revised calculations.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>List</TableHead>
+                <TableHead>Saving</TableHead>
+                <TableHead>Updated</TableHead>
+                <TableHead></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {scenarios.map((scenario) => (
+                <TableRow key={scenario.id}>
+                  <TableCell className="font-medium">{scenario.name}</TableCell>
+                  <TableCell>{scenario.request_json.rate_list_code}</TableCell>
+                  <TableCell>{money(scenario.result_json.total_saving)}</TableCell>
+                  <TableCell>{new Date(scenario.updated_at).toLocaleString()}</TableCell>
+                  <TableCell>
+                    <div className="flex justify-end gap-2">
+                      <Button variant="outline" size="sm" onClick={() => onLoad(scenario)}>
+                        <Calculator className="h-3.5 w-3.5" />
+                        Load
+                      </Button>
+                      <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => onDelete(scenario.id)} title="Delete">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function MetricCard({ label, value }) {
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="text-xs font-medium text-muted-foreground">{label}</div>
+        <div className="mt-1 text-sm font-semibold">{value}</div>
+      </CardContent>
+    </Card>
   );
 }
