@@ -1,0 +1,1 @@
+"""CalcuRate backend application."""

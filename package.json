@@ -1,0 +1,16 @@
+{
+  "name": "calcurate",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "concurrently \"pnpm run dev:backend\" \"pnpm run dev:frontend\"",
+    "dev:backend": ".venv\\Scripts\\python.exe -m uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --port 8000",
+    "dev:frontend": "pnpm --dir frontend dev --host 127.0.0.1",
+    "test": "pnpm run test:backend && pnpm --dir frontend test",
+    "test:backend": ".venv\\Scripts\\python.exe -m pytest backend",
+    "lint": "pnpm --dir frontend lint"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
