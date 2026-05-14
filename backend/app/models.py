@@ -29,6 +29,9 @@ class RateList(Base):
     transition_bands: Mapped[list["TransitionBand"]] = relationship(
         back_populates="rate_list", cascade="all, delete-orphan", order_by="TransitionBand.id"
     )
+    advanced_rule_set: Mapped["AdvancedRuleSet | None"] = relationship(
+        back_populates="rate_list", cascade="all, delete-orphan", uselist=False
+    )
 
 
 class RateYear(Base):
@@ -121,8 +124,31 @@ class SupplementRule(Base):
     rate_year: Mapped[RateYear] = relationship(back_populates="supplements")
 
 
+class AdvancedRuleSet(Base):
+    __tablename__ = "advanced_rule_sets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    rate_list_id: Mapped[int] = mapped_column(ForeignKey("rate_lists.id"), unique=True, nullable=False)
+    rules_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+    rate_list: Mapped[RateList] = relationship(back_populates="advanced_rule_set")
+
+
 class Scenario(Base):
     __tablename__ = "scenarios"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    request_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    result_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[object] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class AdvancedScenario(Base):
+    __tablename__ = "advanced_scenarios"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(160), nullable=False)

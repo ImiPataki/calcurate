@@ -7,9 +7,22 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.admin import router as admin_router
+from app.advanced_calculations import calculate_advanced
 from app.calculations import calculate
 from app.database import DATABASE_URL, SessionLocal, create_db, get_db
-from app.schemas import CalculationRequest, CalculationResult, HealthResponse, ScenarioCreate, ScenarioRead, ScenarioUpdate
+from app.schemas import (
+    AdvancedCalculationRequest,
+    AdvancedCalculationResult,
+    AdvancedScenarioCreate,
+    AdvancedScenarioRead,
+    AdvancedScenarioUpdate,
+    CalculationRequest,
+    CalculationResult,
+    HealthResponse,
+    ScenarioCreate,
+    ScenarioRead,
+    ScenarioUpdate,
+)
 from app.seed import seed_defaults
 
 
@@ -50,6 +63,11 @@ def health():
 @app.post("/api/calculations/preview", response_model=CalculationResult)
 def preview_calculation(request: CalculationRequest, db: Session = Depends(get_db)):
     return calculate(db, request)
+
+
+@app.post("/api/advanced-calculations/preview", response_model=AdvancedCalculationResult)
+def preview_advanced_calculation(request: AdvancedCalculationRequest, db: Session = Depends(get_db)):
+    return calculate_advanced(db, request)
 
 
 @app.get("/api/scenarios", response_model=list[ScenarioRead])
@@ -100,6 +118,59 @@ def delete_scenario(scenario_id: int, db: Session = Depends(get_db)):
     scenario = db.get(models.Scenario, scenario_id)
     if not scenario:
         raise HTTPException(status_code=404, detail="Scenario not found")
+    db.delete(scenario)
+    db.commit()
+    return {"status": "deleted"}
+
+
+@app.get("/api/advanced-scenarios", response_model=list[AdvancedScenarioRead])
+def list_advanced_scenarios(db: Session = Depends(get_db)):
+    return db.query(models.AdvancedScenario).order_by(models.AdvancedScenario.updated_at.desc()).all()
+
+
+@app.post("/api/advanced-scenarios", response_model=AdvancedScenarioRead)
+def create_advanced_scenario(payload: AdvancedScenarioCreate, db: Session = Depends(get_db)):
+    result = calculate_advanced(db, payload.request)
+    scenario = models.AdvancedScenario(
+        name=payload.name,
+        request_json=jsonable_encoder(payload.request),
+        result_json=jsonable_encoder(result),
+    )
+    db.add(scenario)
+    db.commit()
+    db.refresh(scenario)
+    return scenario
+
+
+@app.get("/api/advanced-scenarios/{scenario_id}", response_model=AdvancedScenarioRead)
+def get_advanced_scenario(scenario_id: int, db: Session = Depends(get_db)):
+    scenario = db.get(models.AdvancedScenario, scenario_id)
+    if not scenario:
+        raise HTTPException(status_code=404, detail="Advanced scenario not found")
+    return scenario
+
+
+@app.put("/api/advanced-scenarios/{scenario_id}", response_model=AdvancedScenarioRead)
+def update_advanced_scenario(scenario_id: int, payload: AdvancedScenarioUpdate, db: Session = Depends(get_db)):
+    scenario = db.get(models.AdvancedScenario, scenario_id)
+    if not scenario:
+        raise HTTPException(status_code=404, detail="Advanced scenario not found")
+    if payload.name is not None:
+        scenario.name = payload.name
+    if payload.request is not None:
+        result = calculate_advanced(db, payload.request)
+        scenario.request_json = jsonable_encoder(payload.request)
+        scenario.result_json = jsonable_encoder(result)
+    db.commit()
+    db.refresh(scenario)
+    return scenario
+
+
+@app.delete("/api/advanced-scenarios/{scenario_id}")
+def delete_advanced_scenario(scenario_id: int, db: Session = Depends(get_db)):
+    scenario = db.get(models.AdvancedScenario, scenario_id)
+    if not scenario:
+        raise HTTPException(status_code=404, detail="Advanced scenario not found")
     db.delete(scenario)
     db.commit()
     return {"status": "deleted"}

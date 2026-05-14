@@ -113,6 +113,7 @@ def rate_list_to_schema(row: models.RateList) -> RateListConfig:
             "verified_on": row.verified_on,
             "years": [year_to_schema(item) for item in row.years],
             "transition_bands": [band_to_schema(item) for item in row.transition_bands],
+            "advanced_rules": row.advanced_rule_set.rules_json if row.advanced_rule_set else None,
         }
     )
 
@@ -146,6 +147,8 @@ def build_rate_list(config: RateListConfig) -> models.RateList:
         )
         for item in config.transition_bands
     ]
+    if config.advanced_rules is not None:
+        rate_list.advanced_rule_set = models.AdvancedRuleSet(rules_json=config.advanced_rules)
     for year_config in config.years:
         year = models.RateYear(
             label=year_config.label,
@@ -205,6 +208,7 @@ def get_config(db: Session = Depends(get_db)):
 
 @router.put("/config", response_model=AdminConfig)
 def replace_config(config: AdminConfig, db: Session = Depends(get_db)):
+    db.query(models.AdvancedRuleSet).delete()
     db.query(models.SupplementRule).delete()
     db.query(models.TransitionCap).delete()
     db.query(models.MultiplierTier).delete()

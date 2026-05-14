@@ -163,6 +163,44 @@ def add_transition_bands(rate_list: models.RateList):
     ]
 
 
+def england_2023_advanced_rules() -> dict:
+    return {
+        "base_multiplier_mode": "small_plus_supplements",
+        "previous_list_small_multiplier": "0.499",
+        "charity_payable_percent": "0.20",
+        "sbrr": {
+            "full_relief_max_rv": "12000",
+            "taper_max_rv": "15000",
+        },
+        "retail_relief_by_year": {
+            "2023/24": "0.75",
+            "2024/25": "0.75",
+            "2025/26": "0.40",
+        },
+        "ssbr": {
+            "enabled": True,
+            "annual_cap_amount": "600",
+        },
+    }
+
+
+def england_2026_advanced_rules() -> dict:
+    return {
+        "base_multiplier_mode": "applicable_multiplier",
+        "previous_list_small_multiplier": "0.499",
+        "charity_payable_percent": "0.20",
+        "sbrr": {
+            "full_relief_max_rv": "12000",
+            "taper_max_rv": "15000",
+        },
+        "retail_relief_by_year": {},
+        "ssbr": {
+            "enabled": True,
+            "annual_cap_amount": "800",
+        },
+    }
+
+
 def england_2023() -> models.RateList:
     rate_list = models.RateList(
         code="england_2023",
@@ -176,6 +214,7 @@ def england_2023() -> models.RateList:
         source_note="Active v1 method based on the supplied transcript and screenshots.",
         verified_on=date(2026, 5, 13),
     )
+    rate_list.advanced_rule_set = models.AdvancedRuleSet(rules_json=england_2023_advanced_rules())
     add_transition_bands(rate_list)
     add_rate_year(
         rate_list,
@@ -222,16 +261,17 @@ def england_2023() -> models.RateList:
 def england_2026_draft() -> models.RateList:
     rate_list = models.RateList(
         code="england_2026_draft",
-        name="England 2026 Rating List Draft",
+        name="England 2026 Rating List",
         country="England",
-        status="draft",
-        calculation_strategy="england_2026_draft",
+        status="active",
+        calculation_strategy="england_2026",
         start_date=date(2026, 4, 1),
         end_date=date(2029, 3, 31),
         source_url=f"{GOV_2026_MULTIPLIERS}\n{GOV_TRANSITIONAL}\n{LONDON_CROSSRAIL}\n{CITY_OF_LONDON}",
-        source_note="Reference/admin shell only. Formula is disabled until the full 2026 method is verified.",
-        verified_on=date(2026, 5, 13),
+        source_note="Active 2026/27 method uses official multipliers and transitional-relief rules; later years need rates when announced.",
+        verified_on=date(2026, 5, 14),
     )
+    rate_list.advanced_rule_set = models.AdvancedRuleSet(rules_json=england_2026_advanced_rules())
     add_transition_bands(rate_list)
     year = models.RateYear(
         label="2026/27",
@@ -310,7 +350,28 @@ def seed_defaults(db: Session, reset: bool = False):
         db.query(models.TransitionBand).delete()
         db.query(models.RateList).delete()
         db.commit()
-    if db.query(models.RateList).count():
+    existing = db.query(models.RateList).count()
+    if existing:
+        backfilled = False
+        for rate_list in db.query(models.RateList).all():
+            if rate_list.code == "england_2023" and not rate_list.advanced_rule_set:
+                rate_list.advanced_rule_set = models.AdvancedRuleSet(rules_json=england_2023_advanced_rules())
+                backfilled = True
+            if rate_list.code == "england_2026_draft" and not rate_list.advanced_rule_set:
+                rate_list.advanced_rule_set = models.AdvancedRuleSet(rules_json=england_2026_advanced_rules())
+                backfilled = True
+            if rate_list.code == "england_2026_draft":
+                if rate_list.status != "active":
+                    rate_list.status = "active"
+                    backfilled = True
+                if rate_list.calculation_strategy != "england_2026":
+                    rate_list.calculation_strategy = "england_2026"
+                    backfilled = True
+                if rate_list.name.endswith("Draft"):
+                    rate_list.name = "England 2026 Rating List"
+                    backfilled = True
+        if backfilled:
+            db.commit()
         return
     db.add_all([england_2023(), england_2026_draft()])
     db.commit()

@@ -213,6 +213,72 @@ td select {
   gap: 18px;
 }
 
+.advanced-workspace {
+  display: grid;
+  gap: 18px;
+}
+
+.advanced-sides {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.advanced-side {
+  display: grid;
+  gap: 14px;
+}
+
+.advanced-section {
+  border-top: 1px solid #e2e8ee;
+  padding-top: 12px;
+}
+
+.advanced-section summary {
+  cursor: pointer;
+  color: #17242b;
+  font-weight: 800;
+}
+
+.advanced-section > *:not(summary) {
+  margin-top: 12px;
+}
+
+.advanced-table {
+  max-height: none;
+}
+
+.add-row-button {
+  margin: 12px;
+}
+
+.year-flag-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.validation-panel ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.validation-panel li {
+  color: #52616f;
+}
+
+.validation-panel li.error {
+  color: #91352f;
+}
+
+.validation-panel li.warning {
+  color: #735c14;
+}
+
 .tool-panel,
 .table-panel {
   border: 1px solid #d4dde5;
@@ -577,7 +643,8 @@ td select {
 
   .two-column,
   .admin-grid,
-  .period-control-grid {
+  .period-control-grid,
+  .advanced-sides {
     grid-template-columns: 1fr;
   }
 
@@ -618,5 +685,9 @@ td select {
 
   .actions {
     flex-direction: column;
+  }
+
+  .year-flag-grid {
+    grid-template-columns: 1fr;
   }
 }

@@ -69,6 +69,28 @@ def find_small_multiplier(rate_year: models.RateYear) -> Decimal:
     raise HTTPException(status_code=422, detail=f"No small_business multiplier for {rate_year.label}")
 
 
+def find_applicable_multiplier(rate_year: models.RateYear, rv: Decimal, is_rhl: bool = False) -> Decimal:
+    for tier in rate_year.multiplier_tiers:
+        if tier.rhl_only and not is_rhl:
+            continue
+        if not tier.rhl_only and is_rhl and tier.code in {"small_business", "standard"}:
+            continue
+        if in_range(rv, tier.min_rv, tier.max_rv, tier.min_inclusive, tier.max_inclusive):
+            return Decimal(tier.rate)
+    for tier in rate_year.multiplier_tiers:
+        if not tier.rhl_only and in_range(rv, tier.min_rv, tier.max_rv, tier.min_inclusive, tier.max_inclusive):
+            return Decimal(tier.rate)
+    raise HTTPException(status_code=422, detail=f"No multiplier for {rate_year.label}, rv={rv}")
+
+
+def previous_list_small_multiplier(rate_list: models.RateList) -> Decimal:
+    if rate_list.advanced_rule_set:
+        value = rate_list.advanced_rule_set.rules_json.get("previous_list_small_multiplier")
+        if value:
+            return Decimal(str(value))
+    return find_small_multiplier(rate_list.years[0])
+
+
 def find_transition_category(rate_list: models.RateList, request: CalculationRequest) -> str:
     group = location_group(request.location)
     for band in rate_list.transition_bands:
@@ -260,6 +282,70 @@ def calculate_england_2023(db: Session, rate_list: models.RateList, request: Cal
     )
 
 
+def calculate_england_2026(db: Session, rate_list: models.RateList, request: CalculationRequest) -> CalculationResult:
+    liability_start = request.liability_start_date or rate_list.start_date
+    liability_end = request.liability_end_date or rate_list.end_date
+    if liability_start > rate_list.end_date or liability_end < rate_list.start_date:
+        raise HTTPException(status_code=422, detail="Liability dates do not overlap the selected rate list")
+
+    category = find_transition_category(rate_list, request)
+    previous_base = money(request.previous_rv * previous_list_small_multiplier(rate_list))
+    annual: list[AnnualCalculation] = []
+
+    for rate_year in rate_list.years:
+        base_rate = find_applicable_multiplier(rate_year, request.current_rv, request.is_rhl)
+        nca = money(request.current_rv * base_rate)
+        cap = find_transition_cap(rate_year, category)
+        transitional_limit = money(previous_base * Decimal(cap.appropriate_fraction))
+        transition_applies = nca > previous_base and nca > transitional_limit
+        base_charge = transitional_limit if transition_applies else nca
+        transitional_relief = money(base_charge - nca) if transition_applies else Decimal("0.00")
+        supplement_unprorated = grouped_unprorated_supplements(rate_year, request)
+        supplements_total_unprorated = money(sum(supplement_unprorated.values(), Decimal("0")))
+        total_before_proration = money(base_charge + supplements_total_unprorated)
+
+        days_in_year = (rate_year.end_date - rate_year.start_date).days + 1
+        charged_days = overlap_days(rate_year.start_date, rate_year.end_date, liability_start, liability_end)
+        factor = ratio(Decimal(charged_days) / Decimal(days_in_year)) if charged_days else Decimal("0")
+
+        if charged_days:
+            supplement_details, _ = supplement_amounts(rate_year, request, factor)
+            annual.append(
+                AnnualCalculation(
+                    year_label=rate_year.label,
+                    year_start_date=rate_year.start_date,
+                    year_end_date=rate_year.end_date,
+                    days_charged=charged_days,
+                    days_in_year=days_in_year,
+                    proration_factor=factor,
+                    transition_category=category,
+                    base_liability=previous_base,
+                    notional_chargeable_amount=nca,
+                    transitional_limit=transitional_limit,
+                    transition_applies=transition_applies,
+                    transitional_relief=money(transitional_relief * factor),
+                    base_charge=money(base_charge * factor),
+                    supplements_total=money(supplements_total_unprorated * factor),
+                    total_before_proration=total_before_proration,
+                    total=money(total_before_proration * factor),
+                    lines=build_lines(request, base_rate, nca, transitional_relief, supplement_unprorated, factor),
+                    supplements=supplement_details,
+                )
+            )
+
+        previous_base = base_charge
+
+    return CalculationResult(
+        rate_list_code=rate_list.code,
+        rate_list_name=rate_list.name,
+        calculation_strategy=rate_list.calculation_strategy,
+        status=rate_list.status,
+        inputs=request,
+        annual=annual,
+        total=money(sum((year.total for year in annual), Decimal("0"))),
+    )
+
+
 def calculate(db: Session, request: CalculationRequest) -> CalculationResult:
     rate_list = (
         db.query(models.RateList)
@@ -275,4 +361,6 @@ def calculate(db: Session, request: CalculationRequest) -> CalculationResult:
         )
     if rate_list.calculation_strategy == "england_2023":
         return calculate_england_2023(db, rate_list, request)
+    if rate_list.calculation_strategy == "england_2026":
+        return calculate_england_2026(db, rate_list, request)
     raise HTTPException(status_code=422, detail=f"No strategy registered for {rate_list.calculation_strategy}")

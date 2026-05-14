@@ -91,7 +91,7 @@ def test_crossrail_threshold_is_exclusive():
     assert Decimal(above_line["amount"]) == Decimal("1500.02")
 
 
-def test_2026_draft_is_not_calculated():
+def test_2026_calculates_with_current_multiplier_structure():
     response = client.post(
         "/api/calculations/preview",
         json={
@@ -102,8 +102,95 @@ def test_2026_draft_is_not_calculated():
         },
     )
 
-    assert response.status_code == 422
-    assert "calculation method is not enabled" in response.json()["detail"]
+    assert response.status_code == 200, response.text
+    first_year = response.json()["annual"][0]
+    assert Decimal(first_year["notional_chargeable_amount"]) == Decimal("5184.00")
+
+
+def advanced_request(original=None, revised=None, **overrides):
+    base_side = {
+        "prior_rv": "15000",
+        "start_rv": "30000",
+        "payable_percent": "1",
+        "vacant": False,
+        "charity": False,
+        "is_rhl": False,
+        "retail_relief": False,
+        "ssbr_current": False,
+        "ssbr_previous": False,
+        "sbrr_by_year": [False, False, False],
+        "certificate": {"certificate_type": "reg18_dos"},
+        "improvement_reliefs": [],
+        "changes": [],
+    }
+    payload = {
+        "rate_list_code": "england_2023",
+        "location": "england",
+        "hypothetical": False,
+        "allow_dates_any_order": False,
+        "include_placeholders": True,
+        "original": {**base_side, **(original or {})},
+        "revised": {**base_side, **(revised or {})},
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_advanced_same_original_and_revised_has_zero_saving():
+    response = client.post("/api/advanced-calculations/preview", json=advanced_request())
+
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["issues"] == []
+    assert Decimal(data["total_saving"]) == Decimal("0.00")
+    assert Decimal(data["comparison"][0]["original_total"]) == Decimal("8607.75")
+
+
+def test_advanced_revised_reduction_has_saving():
+    response = client.post(
+        "/api/advanced-calculations/preview",
+        json=advanced_request(revised={"start_rv": "25000"}),
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["issues"] == []
+    assert Decimal(data["total_saving"]) > Decimal("0.00")
+
+
+def test_advanced_out_of_sequence_dates_are_validation_errors():
+    response = client.post(
+        "/api/advanced-calculations/preview",
+        json=advanced_request(
+            original={
+                "changes": [
+                    {"from_date": "2024-04-01", "rv": "32000", "payable_percent": "1", "vacant": False},
+                    {"from_date": "2023-06-01", "rv": "31000", "payable_percent": "1", "vacant": False},
+                ]
+            }
+        ),
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["comparison"] == []
+    assert any("out of sequence" in item["message"] for item in data["issues"])
+
+
+def test_advanced_scenario_crud():
+    create_response = client.post(
+        "/api/advanced-scenarios",
+        json={"name": "Advanced reduction", "request": advanced_request(revised={"start_rv": "25000"})},
+    )
+    assert create_response.status_code == 200, create_response.text
+    scenario_id = create_response.json()["id"]
+
+    list_response = client.get("/api/advanced-scenarios")
+    assert list_response.status_code == 200
+    assert any(item["id"] == scenario_id for item in list_response.json())
+
+    delete_response = client.delete(f"/api/advanced-scenarios/{scenario_id}")
+    assert delete_response.status_code == 200
 
 
 def test_scenario_crud():

@@ -4,6 +4,7 @@ import {
   CalendarDays,
   Database,
   FileClock,
+  GitCompareArrows,
   Layers,
   Plus,
   RotateCcw,
@@ -12,6 +13,7 @@ import {
   Trash2,
 } from "lucide-react";
 
+import { AdvancedCalculator } from "./AdvancedCalculator";
 import { api } from "./api";
 
 const emptyForm = {
@@ -46,7 +48,7 @@ const statuses = [
 
 const strategies = [
   ["england_2023", "England 2023"],
-  ["england_2026_draft", "England 2026 draft"],
+  ["england_2026", "England 2026"],
 ];
 
 const locationGroups = [
@@ -315,7 +317,7 @@ function App() {
       name: `England ${startYear} Rating List Draft`,
       country: "England",
       status: "draft",
-      calculation_strategy: "england_2026_draft",
+      calculation_strategy: "england_2026",
       start_date: startDate,
       end_date: addYearsMinusOneDay(startDate, 3),
       source_url: "",
@@ -418,6 +420,10 @@ function App() {
           <Calculator size={18} />
           Calculator
         </button>
+        <button className={tab === "advanced" ? "nav active" : "nav"} onClick={() => setTab("advanced")}>
+          <GitCompareArrows size={18} />
+          Advanced
+        </button>
         <button className={tab === "scenarios" ? "nav active" : "nav"} onClick={() => setTab("scenarios")}>
           <FileClock size={18} />
           Scenarios
@@ -431,8 +437,8 @@ function App() {
       <main className="main">
         <header className="topbar">
           <div>
-            <h1>{tab === "calculator" ? "Calculator" : tab === "scenarios" ? "Scenarios" : "Admin"}</h1>
-            <p>{result ? `${result.rate_list_name} - ${money(result.total)}` : "England business rates"}</p>
+            <h1>{tab === "calculator" ? "Calculator" : tab === "advanced" ? "Advanced" : tab === "scenarios" ? "Scenarios" : "Admin"}</h1>
+            <p>{tab === "advanced" ? "Original and revised liability comparison" : result ? `${result.rate_list_name} - ${money(result.total)}` : "England business rates"}</p>
           </div>
           <div className="status-pill">
             <Database size={16} />
@@ -538,6 +544,8 @@ function App() {
             <Results result={result} />
           </div>
         )}
+
+        {tab === "advanced" && config && <AdvancedCalculator config={config} onError={setError} onNotice={setNotice} />}
 
         {tab === "scenarios" && (
           <section className="workspace">
