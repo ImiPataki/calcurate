@@ -105,6 +105,50 @@ def test_2026_calculates_with_current_multiplier_structure():
     assert response.status_code == 200, response.text
     first_year = response.json()["annual"][0]
     assert Decimal(first_year["notional_chargeable_amount"]) == Decimal("5184.00")
+    supplement = next(line for line in first_year["lines"] if line["code"] == "transitional_supplement")
+    assert Decimal(supplement["amount"]) == Decimal("120.00")
+    assert Decimal(first_year["total"]) == Decimal("5304.00")
+
+
+def test_2026_previous_standard_multiplier_sets_base_liability():
+    response = client.post(
+        "/api/calculations/preview",
+        json={
+            "rate_list_code": "england_2026_draft",
+            "location": "england",
+            "previous_rv": "51000",
+            "current_rv": "60000",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    first_year = response.json()["annual"][0]
+    assert Decimal(first_year["base_liability"]) == Decimal("28305.00")
+    assert Decimal(first_year["notional_chargeable_amount"]) == Decimal("28800.00")
+    assert first_year["transition_applies"] is False
+    supplement = next(line for line in first_year["lines"] if line["code"] == "transitional_supplement")
+    assert Decimal(supplement["amount"]) == Decimal("600.00")
+    assert Decimal(first_year["total"]) == Decimal("29400.00")
+
+
+def test_2026_transitional_supplement_not_charged_when_transition_applies():
+    response = client.post(
+        "/api/calculations/preview",
+        json={
+            "rate_list_code": "england_2026_draft",
+            "location": "england",
+            "previous_rv": "51000",
+            "current_rv": "100000",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    first_year = response.json()["annual"][0]
+    assert first_year["transition_applies"] is True
+    assert Decimal(first_year["base_liability"]) == Decimal("28305.00")
+    assert Decimal(first_year["transitional_limit"]) == Decimal("32550.75")
+    assert Decimal(first_year["total"]) == Decimal("32550.75")
+    assert not any(line["code"] == "transitional_supplement" for line in first_year["lines"])
 
 
 def advanced_request(original=None, revised=None, **overrides):

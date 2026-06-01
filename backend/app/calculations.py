@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -5,6 +6,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app import models
+from app.rating_rules import previous_list_multiplier_for_rv, supplement_allowed
 from app.schemas import (
     AnnualCalculation,
     BillLine,
@@ -16,6 +18,14 @@ from app.schemas import (
 
 PENNY = Decimal("0.01")
 SIX_PLACES = Decimal("0.000001")
+
+
+@dataclass
+class SupplementTotal:
+    code: str
+    name: str
+    amount: Decimal
+    rate: Decimal
 
 
 def money(value: Decimal) -> Decimal:
@@ -83,14 +93,6 @@ def find_applicable_multiplier(rate_year: models.RateYear, rv: Decimal, is_rhl: 
     raise HTTPException(status_code=422, detail=f"No multiplier for {rate_year.label}, rv={rv}")
 
 
-def previous_list_small_multiplier(rate_list: models.RateList) -> Decimal:
-    if rate_list.advanced_rule_set:
-        value = rate_list.advanced_rule_set.rules_json.get("previous_list_small_multiplier")
-        if value:
-            return Decimal(str(value))
-    return find_small_multiplier(rate_list.years[0])
-
-
 def find_transition_category(rate_list: models.RateList, request: CalculationRequest) -> str:
     group = location_group(request.location)
     for band in rate_list.transition_bands:
@@ -111,10 +113,17 @@ def find_transition_cap(rate_year: models.RateYear, category: str) -> models.Tra
     raise HTTPException(status_code=422, detail=f"No {category} transitional cap for {rate_year.label}")
 
 
-def matching_supplements(rate_year: models.RateYear, request: CalculationRequest) -> list[models.SupplementRule]:
+def matching_supplements(
+    rate_list: models.RateList,
+    rate_year: models.RateYear,
+    request: CalculationRequest,
+    context: dict[str, bool] | None = None,
+) -> list[models.SupplementRule]:
     rules = []
     for rule in rate_year.supplements:
         if not rule.active:
+            continue
+        if not supplement_allowed(rate_list, rule.code, context):
             continue
         if not scope_matches(rule.location_scope, request.location):
             continue
@@ -123,10 +132,16 @@ def matching_supplements(rate_year: models.RateYear, request: CalculationRequest
     return rules
 
 
-def supplement_amounts(rate_year: models.RateYear, request: CalculationRequest, factor: Decimal) -> tuple[list[SupplementBreakdown], dict[str, Decimal]]:
+def supplement_amounts(
+    rate_list: models.RateList,
+    rate_year: models.RateYear,
+    request: CalculationRequest,
+    factor: Decimal,
+    context: dict[str, bool] | None = None,
+) -> tuple[list[SupplementBreakdown], dict[str, Decimal]]:
     breakdowns: list[SupplementBreakdown] = []
     grouped: dict[str, Decimal] = {}
-    for rule in matching_supplements(rate_year, request):
+    for rule in matching_supplements(rate_list, rate_year, request, context):
         unprorated = money(request.current_rv * Decimal(rule.rate))
         amount = money(unprorated * factor)
         breakdowns.append(
@@ -143,10 +158,25 @@ def supplement_amounts(rate_year: models.RateYear, request: CalculationRequest, 
     return breakdowns, grouped
 
 
-def grouped_unprorated_supplements(rate_year: models.RateYear, request: CalculationRequest) -> dict[str, Decimal]:
-    grouped: dict[str, Decimal] = {}
-    for rule in matching_supplements(rate_year, request):
-        grouped[rule.code] = grouped.get(rule.code, Decimal("0")) + money(request.current_rv * Decimal(rule.rate))
+def grouped_unprorated_supplements(
+    rate_list: models.RateList,
+    rate_year: models.RateYear,
+    request: CalculationRequest,
+    context: dict[str, bool] | None = None,
+) -> dict[str, SupplementTotal]:
+    grouped: dict[str, SupplementTotal] = {}
+    for rule in matching_supplements(rate_list, rate_year, request, context):
+        amount = money(request.current_rv * Decimal(rule.rate))
+        current = grouped.get(rule.code)
+        if current:
+            current.amount = money(current.amount + amount)
+        else:
+            grouped[rule.code] = SupplementTotal(
+                code=rule.code,
+                name=rule.name,
+                amount=amount,
+                rate=Decimal(rule.rate),
+            )
     return grouped
 
 
@@ -175,14 +205,14 @@ def build_lines(
     small_rate: Decimal,
     nca: Decimal,
     transitional_relief: Decimal,
-    supplement_unprorated: dict[str, Decimal],
+    supplement_unprorated: dict[str, SupplementTotal],
     factor: Decimal,
 ) -> list[BillLine]:
-    standard_supplement = supplement_unprorated.get("standard_supplement", Decimal("0"))
-    crossrail = supplement_unprorated.get("crossrail", Decimal("0"))
+    standard_supplement = supplement_unprorated.get("standard_supplement")
+    crossrail = supplement_unprorated.get("crossrail")
     city = (
-        supplement_unprorated.get("city_premium_small", Decimal("0"))
-        + supplement_unprorated.get("city_premium_standard", Decimal("0"))
+        supplement_unprorated.get("city_premium_small", SupplementTotal("", "", Decimal("0"), Decimal("0"))).amount
+        + supplement_unprorated.get("city_premium_standard", SupplementTotal("", "", Decimal("0"), Decimal("0"))).amount
     )
 
     lines = [
@@ -190,7 +220,7 @@ def build_lines(
         line(
             "standard_supplement",
             "Supplement" if standard_supplement else "Supplement not applicable",
-            standard_supplement,
+            standard_supplement.amount if standard_supplement else Decimal("0"),
             factor,
             "supplement",
             request.current_rv,
@@ -199,8 +229,23 @@ def build_lines(
         line("small_business_rate_relief", "Small Business Rate Relief", Decimal("0"), factor, "relief"),
         line("city_of_london", "City of London Supplement", city, factor, "supplement", request.current_rv, None),
         line("transitional_relief", "Transitional Relief", transitional_relief, factor, "relief"),
-        line("crossrail", "Crossrail Supplement", crossrail, factor, "supplement", request.current_rv, None),
+        line("crossrail", "Crossrail Supplement", crossrail.amount if crossrail else Decimal("0"), factor, "supplement", request.current_rv, None),
     ]
+    handled = {"standard_supplement", "crossrail", "city_premium_small", "city_premium_standard"}
+    for code, supplement in supplement_unprorated.items():
+        if code in handled:
+            continue
+        lines.append(
+            line(
+                supplement.code,
+                supplement.name,
+                supplement.amount,
+                factor,
+                "supplement",
+                request.current_rv,
+                supplement.rate,
+            )
+        )
     if request.include_placeholders:
         lines.extend(
             [
@@ -236,8 +281,9 @@ def calculate_england_2023(db: Session, rate_list: models.RateList, request: Cal
         transition_applies = nca > previous_base and nca > transitional_limit
         base_charge = transitional_limit if transition_applies else nca
         transitional_relief = money(base_charge - nca) if transition_applies else Decimal("0.00")
-        supplement_unprorated = grouped_unprorated_supplements(rate_year, request)
-        supplements_total_unprorated = money(sum(supplement_unprorated.values(), Decimal("0")))
+        context = {"transition_applies": transition_applies, "ssbr_applies": False}
+        supplement_unprorated = grouped_unprorated_supplements(rate_list, rate_year, request, context)
+        supplements_total_unprorated = money(sum((item.amount for item in supplement_unprorated.values()), Decimal("0")))
         total_before_proration = money(base_charge + supplements_total_unprorated)
 
         days_in_year = (rate_year.end_date - rate_year.start_date).days + 1
@@ -245,7 +291,7 @@ def calculate_england_2023(db: Session, rate_list: models.RateList, request: Cal
         factor = ratio(Decimal(charged_days) / Decimal(days_in_year)) if charged_days else Decimal("0")
 
         if charged_days:
-            supplement_details, _ = supplement_amounts(rate_year, request, factor)
+            supplement_details, _ = supplement_amounts(rate_list, rate_year, request, factor, context)
             annual.append(
                 AnnualCalculation(
                     year_label=rate_year.label,
@@ -289,7 +335,10 @@ def calculate_england_2026(db: Session, rate_list: models.RateList, request: Cal
         raise HTTPException(status_code=422, detail="Liability dates do not overlap the selected rate list")
 
     category = find_transition_category(rate_list, request)
-    previous_base = money(request.previous_rv * previous_list_small_multiplier(rate_list))
+    previous_base = money(
+        request.previous_rv
+        * previous_list_multiplier_for_rv(rate_list, request.previous_rv)
+    )
     annual: list[AnnualCalculation] = []
 
     for rate_year in rate_list.years:
@@ -300,8 +349,9 @@ def calculate_england_2026(db: Session, rate_list: models.RateList, request: Cal
         transition_applies = nca > previous_base and nca > transitional_limit
         base_charge = transitional_limit if transition_applies else nca
         transitional_relief = money(base_charge - nca) if transition_applies else Decimal("0.00")
-        supplement_unprorated = grouped_unprorated_supplements(rate_year, request)
-        supplements_total_unprorated = money(sum(supplement_unprorated.values(), Decimal("0")))
+        context = {"transition_applies": transition_applies, "ssbr_applies": False}
+        supplement_unprorated = grouped_unprorated_supplements(rate_list, rate_year, request, context)
+        supplements_total_unprorated = money(sum((item.amount for item in supplement_unprorated.values()), Decimal("0")))
         total_before_proration = money(base_charge + supplements_total_unprorated)
 
         days_in_year = (rate_year.end_date - rate_year.start_date).days + 1
@@ -309,7 +359,7 @@ def calculate_england_2026(db: Session, rate_list: models.RateList, request: Cal
         factor = ratio(Decimal(charged_days) / Decimal(days_in_year)) if charged_days else Decimal("0")
 
         if charged_days:
-            supplement_details, _ = supplement_amounts(rate_year, request, factor)
+            supplement_details, _ = supplement_amounts(rate_list, rate_year, request, factor, context)
             annual.append(
                 AnnualCalculation(
                     year_label=rate_year.label,

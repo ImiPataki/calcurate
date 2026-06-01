@@ -188,6 +188,23 @@ def england_2026_advanced_rules() -> dict:
     return {
         "base_multiplier_mode": "applicable_multiplier",
         "previous_list_small_multiplier": "0.499",
+        "previous_list_multiplier_tiers": [
+            {
+                "code": "small_business",
+                "name": "2025/26 small business multiplier",
+                "min_rv": "0",
+                "max_rv": "51000",
+                "max_inclusive": False,
+                "rate": "0.499",
+            },
+            {
+                "code": "standard",
+                "name": "2025/26 standard multiplier",
+                "min_rv": "51000",
+                "min_inclusive": True,
+                "rate": "0.555",
+            },
+        ],
         "charity_payable_percent": "0.20",
         "sbrr": {
             "full_relief_max_rv": "12000",
@@ -197,6 +214,11 @@ def england_2026_advanced_rules() -> dict:
         "ssbr": {
             "enabled": True,
             "annual_cap_amount": "800",
+        },
+        "supplement_conditions": {
+            "transitional_supplement": {
+                "exclude_when_any": ["transition_applies", "ssbr_applies"],
+            },
         },
     }
 
@@ -340,6 +362,21 @@ def england_2026_draft() -> models.RateList:
     return rate_list
 
 
+def merge_missing_rules(current: dict | None, defaults: dict) -> tuple[dict, bool]:
+    current = dict(current or {})
+    changed = False
+    for key, value in defaults.items():
+        if key not in current:
+            current[key] = value
+            changed = True
+        elif isinstance(current[key], dict) and isinstance(value, dict):
+            merged, nested_changed = merge_missing_rules(current[key], value)
+            if nested_changed:
+                current[key] = merged
+                changed = True
+    return current, changed
+
+
 def seed_defaults(db: Session, reset: bool = False):
     if reset:
         db.query(models.Scenario).delete()
@@ -360,6 +397,14 @@ def seed_defaults(db: Session, reset: bool = False):
             if rate_list.code == "england_2026_draft" and not rate_list.advanced_rule_set:
                 rate_list.advanced_rule_set = models.AdvancedRuleSet(rules_json=england_2026_advanced_rules())
                 backfilled = True
+            if rate_list.code == "england_2026_draft" and rate_list.advanced_rule_set:
+                merged_rules, rules_changed = merge_missing_rules(
+                    rate_list.advanced_rule_set.rules_json,
+                    england_2026_advanced_rules(),
+                )
+                if rules_changed:
+                    rate_list.advanced_rule_set.rules_json = merged_rules
+                    backfilled = True
             if rate_list.code == "england_2026_draft":
                 if rate_list.status != "active":
                     rate_list.status = "active"

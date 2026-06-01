@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.calculations import in_range, location_group, money, ratio, scope_matches
+from app.rating_rules import previous_list_multiplier_for_rv, rule_decimal, rules_for, supplement_allowed
 from app.schemas import (
     AdvancedAnnualComparison,
     AdvancedCalculationRequest,
@@ -25,19 +26,6 @@ class EventState:
     rv: Decimal
     payable_percent: Decimal
     vacant: bool
-
-
-def rule_decimal(rules: dict, path: list[str], default: str) -> Decimal:
-    value = rules
-    for key in path:
-        if not isinstance(value, dict) or key not in value:
-            return Decimal(default)
-        value = value[key]
-    return Decimal(str(value))
-
-
-def rules_for(rate_list: models.RateList) -> dict:
-    return rate_list.advanced_rule_set.rules_json if rate_list.advanced_rule_set else {}
 
 
 def issue(field: str, message: str, severity: str = "error") -> ValidationIssue:
@@ -70,11 +58,6 @@ def find_transition_cap(rate_year: models.RateYear, category: str) -> models.Tra
     raise HTTPException(status_code=422, detail=f"No {category} transitional cap for {rate_year.label}")
 
 
-def previous_list_multiplier(rate_list: models.RateList) -> Decimal:
-    rules = rules_for(rate_list)
-    return rule_decimal(rules, ["previous_list_small_multiplier"], "0.499")
-
-
 def charity_percent(rate_list: models.RateList) -> Decimal:
     return rule_decimal(rules_for(rate_list), ["charity_payable_percent"], "0.20")
 
@@ -105,10 +88,18 @@ def applicable_multiplier(rate_list: models.RateList, rate_year: models.RateYear
     raise HTTPException(status_code=422, detail=f"No multiplier for {rate_year.label}, rv={rv}")
 
 
-def matching_supplements(rate_year: models.RateYear, location: str, rv: Decimal) -> list[models.SupplementRule]:
+def matching_supplements(
+    rate_list: models.RateList,
+    rate_year: models.RateYear,
+    location: str,
+    rv: Decimal,
+    context: dict[str, bool] | None = None,
+) -> list[models.SupplementRule]:
     rules = []
     for rule in rate_year.supplements:
         if not rule.active:
+            continue
+        if not supplement_allowed(rate_list, rule.code, context):
             continue
         if not scope_matches(rule.location_scope, location):
             continue
@@ -331,7 +322,7 @@ def calculate_side(
     elif side.ssbr_current and side.ssbr_prior_liability is not None:
         previous_base = money(side.ssbr_prior_liability)
     else:
-        previous_base = money(prior_rv * previous_list_multiplier(rate_list) * side_percent(rate_list, side))
+        previous_base = money(prior_rv * previous_list_multiplier_for_rv(rate_list, prior_rv) * side_percent(rate_list, side))
     if side.vacant:
         previous_base = Decimal("0.00")
 
@@ -393,7 +384,8 @@ def calculate_side(
                 )
 
             segment_supplements = Decimal("0.00")
-            for rule in matching_supplements(rate_year, request.location, rv):
+            supplement_context = {"transition_applies": segment_transition, "ssbr_applies": side.ssbr_current}
+            for rule in matching_supplements(rate_list, rate_year, request.location, rv, supplement_context):
                 raw = money(rv * Decimal(rule.rate) * percent)
                 segment_supplements += raw
                 detail = supplement_details.get(rule.code)

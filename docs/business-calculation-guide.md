@@ -67,7 +67,12 @@ For each applicable rate year, CalcuRate follows this process.
    previous RV x previous-list small business multiplier
    ```
 
-   For the seeded 2023 and 2026 configurations, the previous-list small multiplier is stored as `0.499`.
+   For the seeded 2023 configuration, this uses the previous-list small multiplier of `0.499`.
+
+   For the seeded 2026 configuration, the previous-list multiplier is tiered because the 2025/26 standard multiplier was different:
+
+   - previous RV below `51,000`: `0.499`;
+   - previous RV from `51,000`: `0.555`.
 
 5. **Calculate the NCA**
 
@@ -384,6 +389,7 @@ Current boundaries to be aware of:
 - The seeded logic is England-focused.
 - The 2023 strategy represents the standard multiplier difference as a supplement.
 - The 2026 strategy uses configured multiplier tiers directly.
+- The 2026 strategy applies the one-year transitional relief supplement only when neither transitional relief nor Supporting Small Business Relief applies.
 - The Advanced calculator captures certificate type, but does not yet run separate certificate-specific formula routes.
 - There is no authentication in the current app, so anyone with access to the Admin screen can change calculation parameters.
 
