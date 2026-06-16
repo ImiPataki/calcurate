@@ -6,7 +6,15 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app import models
-from app.calculations import in_range, location_group, money, ratio, scope_matches
+from app.calculations import (
+    England2026TransitionState,
+    calculate_england_2026_year,
+    in_range,
+    location_group,
+    money,
+    ratio,
+    scope_matches,
+)
 from app.rating_rules import previous_list_multiplier_for_rv, rule_decimal, rules_for, supplement_allowed
 from app.schemas import (
     AdvancedAnnualComparison,
@@ -15,6 +23,7 @@ from app.schemas import (
     AdvancedScenarioSide,
     AnnualCalculation,
     BillLine,
+    CalculationRequest,
     SupplementBreakdown,
     ValidationIssue,
 )
@@ -164,6 +173,67 @@ def validate_improvements(
         if relief.to_date < rate_list.end_date and day_after not in change_dates:
             issues.append(issue(f"{prefix}.to_date", "The day after the improvement relief end date must exist in the Date Section"))
     return issues
+
+
+def entered_improvement_relief(side: AdvancedScenarioSide) -> bool:
+    return any(relief.from_date or relief.to_date or relief.certified_value is not None for relief in side.improvement_reliefs)
+
+
+def entered_certificate(side: AdvancedScenarioSide) -> bool:
+    cert = side.certificate
+    return any(
+        [
+            cert.start_value is not None,
+            cert.start_date is not None,
+            cert.prior_value is not None,
+            cert.prior_date is not None,
+        ]
+    )
+
+
+def england_2026_advanced_warnings(side: AdvancedScenarioSide, side_name: str) -> list[ValidationIssue]:
+    warnings: list[ValidationIssue] = []
+    if side.ssbr_current or side.ssbr_previous:
+        warnings.append(
+            issue(
+                f"{side_name}.ssbr_current",
+                "2026 SSBR and RHL-SSBR use dedicated England8 workbook blocks; validate this relief combination against the workbook before relying on the figure.",
+                "warning",
+            )
+        )
+    if any(side.sbrr_by_year):
+        warnings.append(
+            issue(
+                f"{side_name}.sbrr_by_year",
+                "2026 SBRR taper/relief is present in England8; this app path has not yet been regression-tested against workbook SBRR examples.",
+                "warning",
+            )
+        )
+    if side.retail_relief:
+        warnings.append(
+            issue(
+                f"{side_name}.retail_relief",
+                "For 2026, RHL is primarily represented by the RHL multiplier flag; the separate retail relief checkbox is not workbook-validated.",
+                "warning",
+            )
+        )
+    if side.vacant or any(change.vacant for change in side.changes):
+        warnings.append(
+            issue(
+                f"{side_name}.vacant",
+                "2026 empty-property cases include workbook threshold checks; validate vacant scenarios against England8 before relying on the figure.",
+                "warning",
+            )
+        )
+    if side.changes or entered_certificate(side) or entered_improvement_relief(side):
+        warnings.append(
+            issue(
+                f"{side_name}.changes",
+                "2026 dated changes, certificates, and improvement reliefs use app segment logic; high-value cases should be checked against England8 calc2.",
+                "warning",
+            )
+        )
+    return warnings
 
 
 def normalize_side(
@@ -325,6 +395,8 @@ def calculate_side(
         previous_base = money(prior_rv * previous_list_multiplier_for_rv(rate_list, prior_rv) * side_percent(rate_list, side))
     if side.vacant:
         previous_base = Decimal("0.00")
+    prior_list_rv = prior_rv
+    transition_state = England2026TransitionState(previous_base=previous_base)
 
     annual: list[AnnualCalculation] = []
     for year_index, rate_year in enumerate(rate_list.years):
@@ -336,16 +408,45 @@ def calculate_side(
         nca = money(start_rv * base_multiplier * start_percent)
         category = find_transition_category_for_rv(rate_list, request.location, start_rv)
         cap = find_transition_cap(rate_year, category)
-        transitional_limit = money(previous_base * Decimal(cap.appropriate_fraction))
-        ssbr_limit = None
-        if side.ssbr_current:
-            cap_amount = rule_decimal(rules_for(rate_list), ["ssbr", "annual_cap_amount"], "800")
-            ssbr_limit = max(transitional_limit, money(previous_base + cap_amount))
-            transitional_limit = money(ssbr_limit)
+        use_2026_transition = rate_list.calculation_strategy == "england_2026" and not side.ssbr_current
+        transition_request = CalculationRequest(
+            rate_list_code=rate_list.code,
+            location=request.location,
+            previous_rv=prior_list_rv,
+            current_rv=start_rv,
+            is_rhl=side.is_rhl,
+        )
+        year_transition_calc = None
+        if use_2026_transition:
+            year_transition_calc = calculate_england_2026_year(
+                rate_year,
+                transition_request,
+                category,
+                transition_state,
+                year_index,
+                current_rv=start_rv,
+                previous_rv=prior_list_rv,
+                is_rhl=side.is_rhl,
+                charge_percent=start_percent,
+            )
+            nca = money(year_transition_calc.display_nca)
+            transitional_limit = money(year_transition_calc.transitional_limit)
+            transition_applies = year_transition_calc.transition_applies
+            annual_base_charge = (
+                year_transition_calc.transitional_limit
+                if transition_applies
+                else year_transition_calc.base_nca
+            )
+            transitional_relief = money(year_transition_calc.transitional_relief)
+        else:
+            transitional_limit = money(previous_base * Decimal(cap.appropriate_fraction))
+            if side.ssbr_current:
+                cap_amount = rule_decimal(rules_for(rate_list), ["ssbr", "annual_cap_amount"], "800")
+                transitional_limit = money(max(transitional_limit, money(previous_base + cap_amount)))
 
-        transition_applies = nca > previous_base and nca > transitional_limit and prior_rv > 0
-        annual_base_charge = transitional_limit if transition_applies else nca
-        transitional_relief = money(annual_base_charge - nca) if transition_applies else Decimal("0.00")
+            transition_applies = nca > previous_base and nca > transitional_limit and prior_rv > 0
+            annual_base_charge = transitional_limit if transition_applies else nca
+            transitional_relief = money(annual_base_charge - nca) if transition_applies else Decimal("0.00")
 
         total = Decimal("0.00")
         supplements_total = Decimal("0.00")
@@ -362,11 +463,33 @@ def calculate_side(
             percent = Decimal("0") if state.vacant else state.payable_percent
             multiplier, segment_multiplier_code = applicable_multiplier(rate_list, rate_year, rv, side.is_rhl)
             segment_nca = money(rv * multiplier * percent)
-            segment_tl = money(previous_base * Decimal(cap.appropriate_fraction))
-            if side.ssbr_current:
-                segment_tl = money(max(segment_tl, money(previous_base + rule_decimal(rules_for(rate_list), ["ssbr", "annual_cap_amount"], "800"))))
-            segment_transition = segment_nca > previous_base and segment_nca > segment_tl and prior_rv > 0
-            segment_base = segment_tl if segment_transition else segment_nca
+            if use_2026_transition:
+                segment_category = find_transition_category_for_rv(rate_list, request.location, rv)
+                segment_transition_calc = calculate_england_2026_year(
+                    rate_year,
+                    transition_request,
+                    segment_category,
+                    transition_state,
+                    year_index,
+                    current_rv=rv,
+                    previous_rv=prior_list_rv,
+                    is_rhl=side.is_rhl,
+                    charge_percent=percent,
+                )
+                segment_nca = money(segment_transition_calc.display_nca)
+                segment_tl = money(segment_transition_calc.transitional_limit)
+                segment_transition = segment_transition_calc.transition_applies
+                segment_base = (
+                    segment_transition_calc.transitional_limit
+                    if segment_transition
+                    else segment_transition_calc.base_nca
+                )
+            else:
+                segment_tl = money(previous_base * Decimal(cap.appropriate_fraction))
+                if side.ssbr_current:
+                    segment_tl = money(max(segment_tl, money(previous_base + rule_decimal(rules_for(rate_list), ["ssbr", "annual_cap_amount"], "800"))))
+                segment_transition = segment_nca > previous_base and segment_nca > segment_tl and prior_rv > 0
+                segment_base = segment_tl if segment_transition else segment_nca
 
             aggregate_lines(
                 line_map,
@@ -384,7 +507,11 @@ def calculate_side(
                 )
 
             segment_supplements = Decimal("0.00")
-            supplement_context = {"transition_applies": segment_transition, "ssbr_applies": side.ssbr_current}
+            supplement_context = {
+                "transition_applies": segment_transition,
+                "ssbr_applies": side.ssbr_current,
+                "new_entry": prior_list_rv == 0,
+            }
             for rule in matching_supplements(rate_list, rate_year, request.location, rv, supplement_context):
                 raw = money(rv * Decimal(rule.rate) * percent)
                 segment_supplements += raw
@@ -461,8 +588,12 @@ def calculate_side(
                 supplements=list(supplement_details.values()),
             )
         )
-        previous_base = annual_base_charge
-        prior_rv = start_rv
+        if use_2026_transition and year_transition_calc:
+            transition_state = year_transition_calc.next_state
+            previous_base = transition_state.previous_base
+        else:
+            previous_base = annual_base_charge
+            prior_rv = start_rv
 
     return annual
 
@@ -472,6 +603,9 @@ def calculate_advanced(db: Session, request: AdvancedCalculationRequest) -> Adva
     original_events, original_issues = normalize_side(rate_list, request.original, "original", request.allow_dates_any_order)
     revised_events, revised_issues = normalize_side(rate_list, request.revised, "revised", request.allow_dates_any_order)
     issues = original_issues + revised_issues
+    if rate_list.calculation_strategy == "england_2026":
+        issues.extend(england_2026_advanced_warnings(request.original, "original"))
+        issues.extend(england_2026_advanced_warnings(request.revised, "revised"))
 
     if request.original.charity and any(request.original.sbrr_by_year):
         issues.append(issue("original.charity", "Charity and SBRR cannot both be selected"))

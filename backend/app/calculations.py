@@ -18,6 +18,7 @@ from app.schemas import (
 
 PENNY = Decimal("0.01")
 SIX_PLACES = Decimal("0.000001")
+THREE_PLACES = Decimal("0.001")
 
 
 @dataclass
@@ -28,12 +29,39 @@ class SupplementTotal:
     rate: Decimal
 
 
+@dataclass
+class England2026TransitionState:
+    previous_base: Decimal
+    previous_phasing: bool = True
+    previous_win_lose: str | None = None
+    previous_small_multiplier: Decimal | None = None
+    previous_trs_rate: Decimal = Decimal("0")
+    previous_transition_nca: Decimal | None = None
+
+
+@dataclass
+class England2026YearCalculation:
+    base_rate: Decimal
+    base_nca: Decimal
+    display_nca: Decimal
+    transition_nca: Decimal
+    transitional_limit: Decimal
+    transition_applies: bool
+    transitional_relief: Decimal
+    win_lose: str
+    next_state: England2026TransitionState
+
+
 def money(value: Decimal) -> Decimal:
     return Decimal(value).quantize(PENNY, rounding=ROUND_HALF_UP)
 
 
 def ratio(value: Decimal) -> Decimal:
     return Decimal(value).quantize(SIX_PLACES, rounding=ROUND_HALF_UP)
+
+
+def workbook_ratio(value: Decimal) -> Decimal:
+    return Decimal(value).quantize(THREE_PLACES, rounding=ROUND_HALF_UP)
 
 
 def in_range(value: Decimal, minimum, maximum, min_inclusive: bool, max_inclusive: bool) -> bool:
@@ -79,6 +107,13 @@ def find_small_multiplier(rate_year: models.RateYear) -> Decimal:
     raise HTTPException(status_code=422, detail=f"No small_business multiplier for {rate_year.label}")
 
 
+def supplement_rate(rate_year: models.RateYear, code: str) -> Decimal:
+    for rule in rate_year.supplements:
+        if rule.code == code and rule.active:
+            return Decimal(rule.rate)
+    return Decimal("0")
+
+
 def find_applicable_multiplier(rate_year: models.RateYear, rv: Decimal, is_rhl: bool = False) -> Decimal:
     for tier in rate_year.multiplier_tiers:
         if tier.rhl_only and not is_rhl:
@@ -111,6 +146,86 @@ def find_transition_cap(rate_year: models.RateYear, category: str) -> models.Tra
         if cap.category == category:
             return cap
     raise HTTPException(status_code=422, detail=f"No {category} transitional cap for {rate_year.label}")
+
+
+def calculate_england_2026_year(
+    rate_year: models.RateYear,
+    request: CalculationRequest,
+    category: str,
+    state: England2026TransitionState,
+    year_index: int,
+    current_rv: Decimal | None = None,
+    previous_rv: Decimal | None = None,
+    is_rhl: bool | None = None,
+    charge_percent: Decimal = Decimal("1"),
+) -> England2026YearCalculation:
+    """Mirror the England8 workbook's normal 2026-list transition state.
+
+    The workbook distinguishes the ordinary NCA from the NCA used to decide
+    whether phasing continues. In 2026/27 that test NCA includes the one-year
+    Transitional Relief Supplement; later years inflate the prior test NCA by
+    a rounded small-multiplier growth factor.
+    """
+    rv = request.current_rv if current_rv is None else current_rv
+    prior_rv = request.previous_rv if previous_rv is None else previous_rv
+    rhl = request.is_rhl if is_rhl is None else is_rhl
+    base_rate = find_applicable_multiplier(rate_year, rv, rhl)
+    small_multiplier = find_small_multiplier(rate_year)
+    trs_rate = supplement_rate(rate_year, "transitional_supplement")
+    base_nca = rv * base_rate * charge_percent
+
+    if year_index == 0 or state.previous_transition_nca is None or state.previous_small_multiplier is None:
+        transition_nca = rv * (base_rate + trs_rate) * charge_percent
+    else:
+        denominator = state.previous_small_multiplier + state.previous_trs_rate
+        growth = workbook_ratio(small_multiplier / denominator) if denominator else Decimal("1")
+        transition_nca = state.previous_transition_nca * growth
+
+    win_lose_basis = transition_nca if year_index == 0 else base_nca
+    win_lose = "l" if win_lose_basis > state.previous_base else "w"
+    appropriate_fraction = (
+        Decimal(find_transition_cap(rate_year, category).appropriate_fraction)
+        if win_lose == "l"
+        else Decimal("1")
+    )
+    transitional_limit = state.previous_base * appropriate_fraction
+    is_outside_limit = (
+        (transition_nca > state.previous_base and transition_nca > transitional_limit)
+        or (transition_nca < state.previous_base and transition_nca < transitional_limit)
+    )
+    win_lose_changed = state.previous_win_lose is not None and win_lose != state.previous_win_lose
+    transition_applies = (
+        not win_lose_changed
+        and is_outside_limit
+        and state.previous_phasing
+        and appropriate_fraction != Decimal("1")
+        and prior_rv > 0
+        and rv > 0
+        and charge_percent > 0
+    )
+
+    base_charge = transitional_limit if transition_applies else base_nca
+    display_nca = transition_nca if year_index == 0 and transition_applies else base_nca
+    transitional_relief = base_charge - display_nca if transition_applies else Decimal("0")
+    next_state = England2026TransitionState(
+        previous_base=transitional_limit,
+        previous_phasing=transition_applies,
+        previous_win_lose=win_lose,
+        previous_small_multiplier=small_multiplier,
+        previous_trs_rate=trs_rate,
+        previous_transition_nca=transition_nca,
+    )
+    return England2026YearCalculation(
+        base_rate=base_rate,
+        base_nca=base_nca,
+        display_nca=display_nca,
+        transition_nca=transition_nca,
+        transitional_limit=transitional_limit,
+        transition_applies=transition_applies,
+        transitional_relief=transitional_relief,
+        win_lose=win_lose,
+        next_state=next_state,
+    )
 
 
 def matching_supplements(
@@ -335,21 +450,20 @@ def calculate_england_2026(db: Session, rate_list: models.RateList, request: Cal
         raise HTTPException(status_code=422, detail="Liability dates do not overlap the selected rate list")
 
     category = find_transition_category(rate_list, request)
-    previous_base = money(
-        request.previous_rv
+    state = England2026TransitionState(
+        previous_base=request.previous_rv
         * previous_list_multiplier_for_rv(rate_list, request.previous_rv)
     )
     annual: list[AnnualCalculation] = []
 
-    for rate_year in rate_list.years:
-        base_rate = find_applicable_multiplier(rate_year, request.current_rv, request.is_rhl)
-        nca = money(request.current_rv * base_rate)
-        cap = find_transition_cap(rate_year, category)
-        transitional_limit = money(previous_base * Decimal(cap.appropriate_fraction))
-        transition_applies = nca > previous_base and nca > transitional_limit
-        base_charge = transitional_limit if transition_applies else nca
-        transitional_relief = money(base_charge - nca) if transition_applies else Decimal("0.00")
-        context = {"transition_applies": transition_applies, "ssbr_applies": False}
+    for year_index, rate_year in enumerate(rate_list.years):
+        year_calc = calculate_england_2026_year(rate_year, request, category, state, year_index)
+        base_charge = year_calc.transitional_limit if year_calc.transition_applies else year_calc.base_nca
+        context = {
+            "transition_applies": year_calc.transition_applies,
+            "ssbr_applies": False,
+            "new_entry": request.previous_rv == 0,
+        }
         supplement_unprorated = grouped_unprorated_supplements(rate_list, rate_year, request, context)
         supplements_total_unprorated = money(sum((item.amount for item in supplement_unprorated.values()), Decimal("0")))
         total_before_proration = money(base_charge + supplements_total_unprorated)
@@ -369,21 +483,28 @@ def calculate_england_2026(db: Session, rate_list: models.RateList, request: Cal
                     days_in_year=days_in_year,
                     proration_factor=factor,
                     transition_category=category,
-                    base_liability=previous_base,
-                    notional_chargeable_amount=nca,
-                    transitional_limit=transitional_limit,
-                    transition_applies=transition_applies,
-                    transitional_relief=money(transitional_relief * factor),
+                    base_liability=money(state.previous_base),
+                    notional_chargeable_amount=money(year_calc.display_nca),
+                    transitional_limit=money(year_calc.transitional_limit),
+                    transition_applies=year_calc.transition_applies,
+                    transitional_relief=money(year_calc.transitional_relief * factor),
                     base_charge=money(base_charge * factor),
                     supplements_total=money(supplements_total_unprorated * factor),
                     total_before_proration=total_before_proration,
                     total=money(total_before_proration * factor),
-                    lines=build_lines(request, base_rate, nca, transitional_relief, supplement_unprorated, factor),
+                    lines=build_lines(
+                        request,
+                        year_calc.base_rate,
+                        year_calc.display_nca,
+                        year_calc.transitional_relief,
+                        supplement_unprorated,
+                        factor,
+                    ),
                     supplements=supplement_details,
                 )
             )
 
-        previous_base = base_charge
+        state = year_calc.next_state
 
     return CalculationResult(
         rate_list_code=rate_list.code,

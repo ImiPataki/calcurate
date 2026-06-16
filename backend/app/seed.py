@@ -1,3 +1,4 @@
+from copy import deepcopy
 from datetime import date
 from decimal import Decimal
 
@@ -217,7 +218,7 @@ def england_2026_advanced_rules() -> dict:
         },
         "supplement_conditions": {
             "transitional_supplement": {
-                "exclude_when_any": ["transition_applies", "ssbr_applies"],
+                "exclude_when_any": ["transition_applies", "ssbr_applies", "new_entry"],
             },
         },
     }
@@ -290,8 +291,8 @@ def england_2026_draft() -> models.RateList:
         start_date=date(2026, 4, 1),
         end_date=date(2029, 3, 31),
         source_url=f"{GOV_2026_MULTIPLIERS}\n{GOV_TRANSITIONAL}\n{LONDON_CROSSRAIL}\n{CITY_OF_LONDON}",
-        source_note="Active 2026/27 method uses official multipliers and transitional-relief rules; later years need rates when announced.",
-        verified_on=date(2026, 5, 14),
+        source_note="Active 2026-list method seeded from England8_wo.xlsm; 2027/28 and 2028/29 use workbook estimates.",
+        verified_on=date(2026, 6, 16),
     )
     rate_list.advanced_rule_set = models.AdvancedRuleSet(rules_json=england_2026_advanced_rules())
     add_transition_bands(rate_list)
@@ -358,7 +359,90 @@ def england_2026_draft() -> models.RateList:
             source_url=CITY_OF_LONDON,
         ),
     ]
-    rate_list.years = [year]
+    years = [year]
+    for label, start, end, order, small, standard, high, small_rhl, standard_rhl, caps in [
+        (
+            "2027/28",
+            date(2027, 4, 1),
+            date(2028, 3, 31),
+            2,
+            "0.450",
+            "0.500",
+            "0.529",
+            "0.398",
+            "0.448",
+            {"small": "1.1462", "medium": "1.3025", "large": "1.3025"},
+        ),
+        (
+            "2028/29",
+            date(2028, 4, 1),
+            date(2029, 3, 31),
+            3,
+            "0.469",
+            "0.521",
+            "0.551",
+            "0.415",
+            "0.467",
+            {"small": "1.3025", "medium": "1.4588", "large": "1.3025"},
+        ),
+    ]:
+        estimated_year = models.RateYear(
+            label=label,
+            start_date=start,
+            end_date=end,
+            display_order=order,
+            inflation_factor=d("1"),
+            source_url=GOV_2026_MULTIPLIERS,
+            source_note="Estimated from England8_wo.xlsm update/data tables.",
+        )
+        estimated_year.multiplier_tiers = [
+            models.MultiplierTier(code="small_rhl", name="Small RHL multiplier", min_rv=d("0"), max_rv=d("51000"), max_inclusive=False, rhl_only=True, rate=d(small_rhl)),
+            models.MultiplierTier(code="small_business", name="Small business multiplier", min_rv=d("0"), max_rv=d("51000"), max_inclusive=False, rate=d(small)),
+            models.MultiplierTier(code="standard_rhl", name="Standard RHL multiplier", min_rv=d("51000"), max_rv=d("500000"), max_inclusive=False, rhl_only=True, rate=d(standard_rhl)),
+            models.MultiplierTier(code="standard", name="Standard multiplier", min_rv=d("51000"), max_rv=d("500000"), max_inclusive=False, rate=d(standard)),
+            models.MultiplierTier(code="high_value", name="High-value multiplier", min_rv=d("500000"), min_inclusive=True, rate=d(high)),
+        ]
+        for category, fraction in caps.items():
+            estimated_year.transition_caps.append(
+                models.TransitionCap(
+                    category=category,
+                    cap_percent=(d(fraction) - d("1")) * d("100"),
+                    inflation_factor=d("1"),
+                    appropriate_fraction=d(fraction),
+                )
+            )
+        estimated_year.supplements = [
+            models.SupplementRule(
+                code="crossrail",
+                name="Crossrail Supplement",
+                location_scope="london",
+                min_rv=d("92000"),
+                min_inclusive=False,
+                rate=d("0.020"),
+                source_url=LONDON_CROSSRAIL,
+                source_note="England8 2026-list threshold.",
+            ),
+            models.SupplementRule(
+                code="city_premium_small",
+                name="City of London Premium",
+                location_scope="city_london",
+                max_rv=d("51000"),
+                max_inclusive=False,
+                rate=d("0.029"),
+                source_url=CITY_OF_LONDON,
+            ),
+            models.SupplementRule(
+                code="city_premium_standard",
+                name="City of London Premium",
+                location_scope="city_london",
+                min_rv=d("51000"),
+                min_inclusive=True,
+                rate=d("0.032"),
+                source_url=CITY_OF_LONDON,
+            ),
+        ]
+        years.append(estimated_year)
+    rate_list.years = years
     return rate_list
 
 
@@ -377,6 +461,169 @@ def merge_missing_rules(current: dict | None, defaults: dict) -> tuple[dict, boo
     return current, changed
 
 
+def clone_multiplier_tier(tier: models.MultiplierTier) -> models.MultiplierTier:
+    return models.MultiplierTier(
+        code=tier.code,
+        name=tier.name,
+        min_rv=tier.min_rv,
+        max_rv=tier.max_rv,
+        min_inclusive=tier.min_inclusive,
+        max_inclusive=tier.max_inclusive,
+        rhl_only=tier.rhl_only,
+        rate=tier.rate,
+    )
+
+
+def clone_transition_cap(cap: models.TransitionCap) -> models.TransitionCap:
+    return models.TransitionCap(
+        category=cap.category,
+        cap_percent=cap.cap_percent,
+        inflation_factor=cap.inflation_factor,
+        appropriate_fraction=cap.appropriate_fraction,
+    )
+
+
+def clone_supplement_rule(rule: models.SupplementRule) -> models.SupplementRule:
+    return models.SupplementRule(
+        code=rule.code,
+        name=rule.name,
+        location_scope=rule.location_scope,
+        min_rv=rule.min_rv,
+        max_rv=rule.max_rv,
+        min_inclusive=rule.min_inclusive,
+        max_inclusive=rule.max_inclusive,
+        rate=rule.rate,
+        active=rule.active,
+        source_url=rule.source_url,
+        source_note=rule.source_note,
+    )
+
+
+def clone_rate_year(year: models.RateYear) -> models.RateYear:
+    clone = models.RateYear(
+        label=year.label,
+        start_date=year.start_date,
+        end_date=year.end_date,
+        display_order=year.display_order,
+        inflation_factor=year.inflation_factor,
+        source_url=year.source_url,
+        source_note=year.source_note,
+    )
+    clone.multiplier_tiers = [clone_multiplier_tier(tier) for tier in year.multiplier_tiers]
+    clone.transition_caps = [clone_transition_cap(cap) for cap in year.transition_caps]
+    clone.supplements = [clone_supplement_rule(rule) for rule in year.supplements]
+    return clone
+
+
+def clone_transition_band(band: models.TransitionBand) -> models.TransitionBand:
+    return models.TransitionBand(
+        location_group=band.location_group,
+        category=band.category,
+        min_rv=band.min_rv,
+        max_rv=band.max_rv,
+        min_inclusive=band.min_inclusive,
+        max_inclusive=band.max_inclusive,
+    )
+
+
+def sync_2026_rate_list(rate_list: models.RateList) -> bool:
+    default = england_2026_draft()
+    changed = False
+
+    for field in [
+        "name",
+        "country",
+        "status",
+        "calculation_strategy",
+        "start_date",
+        "end_date",
+        "source_url",
+        "source_note",
+        "verified_on",
+    ]:
+        value = getattr(default, field)
+        if getattr(rate_list, field) != value:
+            setattr(rate_list, field, value)
+            changed = True
+
+    def year_signature(year: models.RateYear):
+        tiers = tuple(
+            (
+                tier.code,
+                tier.name,
+                tier.min_rv,
+                tier.max_rv,
+                tier.min_inclusive,
+                tier.max_inclusive,
+                tier.rhl_only,
+                tier.rate,
+            )
+            for tier in year.multiplier_tiers
+        )
+        caps = tuple((cap.category, cap.cap_percent, cap.inflation_factor, cap.appropriate_fraction) for cap in year.transition_caps)
+        supplements = tuple(
+            (
+                rule.code,
+                rule.name,
+                rule.location_scope,
+                rule.min_rv,
+                rule.max_rv,
+                rule.min_inclusive,
+                rule.max_inclusive,
+                rule.rate,
+                rule.active,
+                rule.source_url,
+                rule.source_note,
+            )
+            for rule in year.supplements
+        )
+        return (
+            year.label,
+            year.start_date,
+            year.end_date,
+            year.display_order,
+            year.inflation_factor,
+            year.source_url,
+            year.source_note,
+            tiers,
+            caps,
+            supplements,
+        )
+
+    expected_years = [year_signature(year) for year in default.years]
+    current_years = [year_signature(year) for year in rate_list.years]
+    if current_years != expected_years:
+        rate_list.years.clear()
+        for year in default.years:
+            rate_list.years.append(clone_rate_year(year))
+        changed = True
+
+    expected_bands = [
+        (band.location_group, band.category, band.min_rv, band.max_rv, band.min_inclusive, band.max_inclusive)
+        for band in default.transition_bands
+    ]
+    current_bands = [
+        (band.location_group, band.category, band.min_rv, band.max_rv, band.min_inclusive, band.max_inclusive)
+        for band in rate_list.transition_bands
+    ]
+    if current_bands != expected_bands:
+        rate_list.transition_bands.clear()
+        for band in default.transition_bands:
+            rate_list.transition_bands.append(clone_transition_band(band))
+        changed = True
+
+    default_rules = deepcopy(default.advanced_rule_set.rules_json)
+    if rate_list.advanced_rule_set:
+        if rate_list.advanced_rule_set.rules_json != default_rules:
+            rate_list.advanced_rule_set.rules_json = deepcopy(default_rules)
+            changed = True
+    else:
+        rate_list.advanced_rule_set = models.AdvancedRuleSet(rules_json=deepcopy(default_rules))
+        changed = True
+
+    return changed
+
+
 def seed_defaults(db: Session, reset: bool = False):
     if reset:
         db.query(models.Scenario).delete()
@@ -387,9 +634,16 @@ def seed_defaults(db: Session, reset: bool = False):
         db.query(models.TransitionBand).delete()
         db.query(models.RateList).delete()
         db.commit()
-    existing = db.query(models.RateList).count()
-    if existing:
+    if db.query(models.RateList).count():
         backfilled = False
+        existing_codes = {rate_list.code for rate_list in db.query(models.RateList).all()}
+        if "england_2023" not in existing_codes:
+            db.add(england_2023())
+            backfilled = True
+        if "england_2026_draft" not in existing_codes:
+            db.add(england_2026_draft())
+            backfilled = True
+
         for rate_list in db.query(models.RateList).all():
             if rate_list.code == "england_2023" and not rate_list.advanced_rule_set:
                 rate_list.advanced_rule_set = models.AdvancedRuleSet(rules_json=england_2023_advanced_rules())
@@ -406,14 +660,7 @@ def seed_defaults(db: Session, reset: bool = False):
                     rate_list.advanced_rule_set.rules_json = merged_rules
                     backfilled = True
             if rate_list.code == "england_2026_draft":
-                if rate_list.status != "active":
-                    rate_list.status = "active"
-                    backfilled = True
-                if rate_list.calculation_strategy != "england_2026":
-                    rate_list.calculation_strategy = "england_2026"
-                    backfilled = True
-                if rate_list.name.endswith("Draft"):
-                    rate_list.name = "England 2026 Rating List"
+                if sync_2026_rate_list(rate_list):
                     backfilled = True
         if backfilled:
             db.commit()

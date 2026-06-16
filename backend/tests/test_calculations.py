@@ -103,11 +103,17 @@ def test_2026_calculates_with_current_multiplier_structure():
     )
 
     assert response.status_code == 200, response.text
-    first_year = response.json()["annual"][0]
-    assert Decimal(first_year["notional_chargeable_amount"]) == Decimal("5184.00")
-    supplement = next(line for line in first_year["lines"] if line["code"] == "transitional_supplement")
-    assert Decimal(supplement["amount"]) == Decimal("120.00")
-    assert Decimal(first_year["total"]) == Decimal("5304.00")
+    annual = response.json()["annual"]
+    assert len(annual) == 3
+    first_year = annual[0]
+    assert Decimal(first_year["base_liability"]) == Decimal("4990.00")
+    assert Decimal(first_year["notional_chargeable_amount"]) == Decimal("5304.00")
+    assert Decimal(first_year["transitional_limit"]) == Decimal("5239.50")
+    assert first_year["transition_applies"] is True
+    assert not any(line["code"] == "transitional_supplement" for line in first_year["lines"])
+    assert Decimal(first_year["total"]) == Decimal("5239.50")
+    assert Decimal(annual[1]["total"]) == Decimal("5400.00")
+    assert Decimal(annual[2]["total"]) == Decimal("5628.00")
 
 
 def test_2026_previous_standard_multiplier_sets_base_liability():
@@ -129,6 +135,9 @@ def test_2026_previous_standard_multiplier_sets_base_liability():
     supplement = next(line for line in first_year["lines"] if line["code"] == "transitional_supplement")
     assert Decimal(supplement["amount"]) == Decimal("600.00")
     assert Decimal(first_year["total"]) == Decimal("29400.00")
+    assert Decimal(response.json()["annual"][1]["base_liability"]) == Decimal("32550.75")
+    assert Decimal(response.json()["annual"][1]["total"]) == Decimal("30000.00")
+    assert Decimal(response.json()["annual"][2]["total"]) == Decimal("31260.00")
 
 
 def test_2026_transitional_supplement_not_charged_when_transition_applies():
@@ -148,6 +157,31 @@ def test_2026_transitional_supplement_not_charged_when_transition_applies():
     assert Decimal(first_year["base_liability"]) == Decimal("28305.00")
     assert Decimal(first_year["transitional_limit"]) == Decimal("32550.75")
     assert Decimal(first_year["total"]) == Decimal("32550.75")
+    assert not any(line["code"] == "transitional_supplement" for line in first_year["lines"])
+    second_year = response.json()["annual"][1]
+    third_year = response.json()["annual"][2]
+    assert second_year["transition_applies"] is True
+    assert Decimal(second_year["transitional_limit"]) == Decimal("42397.35")
+    assert Decimal(second_year["total"]) == Decimal("42397.35")
+    assert third_year["transition_applies"] is False
+    assert Decimal(third_year["total"]) == Decimal("52100.00")
+
+
+def test_2026_new_entry_does_not_charge_transitional_supplement():
+    response = client.post(
+        "/api/calculations/preview",
+        json={
+            "rate_list_code": "england_2026_draft",
+            "location": "england",
+            "previous_rv": "0",
+            "current_rv": "12000",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    first_year = response.json()["annual"][0]
+    assert first_year["transition_applies"] is False
+    assert Decimal(first_year["total"]) == Decimal("5184.00")
     assert not any(line["code"] == "transitional_supplement" for line in first_year["lines"])
 
 
@@ -188,6 +222,25 @@ def test_advanced_same_original_and_revised_has_zero_saving():
     assert data["issues"] == []
     assert Decimal(data["total_saving"]) == Decimal("0.00")
     assert Decimal(data["comparison"][0]["original_total"]) == Decimal("8607.75")
+
+
+def test_advanced_2026_uses_workbook_transition_core():
+    response = client.post(
+        "/api/advanced-calculations/preview",
+        json=advanced_request(
+            original={"prior_rv": "10000", "start_rv": "12000"},
+            revised={"prior_rv": "10000", "start_rv": "12000"},
+            rate_list_code="england_2026_draft",
+        ),
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["issues"] == []
+    assert Decimal(data["original"][0]["total"]) == Decimal("5239.50")
+    assert Decimal(data["original"][1]["total"]) == Decimal("5400.00")
+    assert Decimal(data["original"][2]["total"]) == Decimal("5628.00")
+    assert Decimal(data["total_saving"]) == Decimal("0.00")
 
 
 def test_advanced_revised_reduction_has_saving():
